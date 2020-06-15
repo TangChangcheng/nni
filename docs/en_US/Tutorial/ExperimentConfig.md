@@ -17,7 +17,6 @@ This document describes the rules to write the config file, and provides some ex
     + [trainingServicePlatform](#trainingserviceplatform)
     + [searchSpacePath](#searchspacepath)
     + [useAnnotation](#useannotation)
-    + [multiPhase](#multiphase)
     + [multiThread](#multithread)
     + [nniManagerIp](#nnimanagerip)
     + [logDir](#logdir)
@@ -94,8 +93,6 @@ searchSpacePath:
 #choice: true, false, default: false
 useAnnotation:
 #choice: true, false, default: false
-multiPhase:
-#choice: true, false, default: false
 multiThread:
 tuner:
   #choice: TPE, Random, Anneal, Evolution
@@ -129,8 +126,6 @@ trainingServicePlatform:
 searchSpacePath:
 #choice: true, false, default: false
 useAnnotation:
-#choice: true, false, default: false
-multiPhase:
 #choice: true, false, default: false
 multiThread:
 tuner:
@@ -170,8 +165,6 @@ maxTrialNum:
 trainingServicePlatform:
 #choice: true, false, default: false
 useAnnotation:
-#choice: true, false, default: false
-multiPhase:
 #choice: true, false, default: false
 multiThread:
 tuner:
@@ -282,12 +275,6 @@ Optional. Bool. Default: false.
 Use annotation to analysis trial code and generate search space.
 
 Note: if __useAnnotation__ is true, the searchSpacePath field should be removed.
-
-### multiPhase
-
-Optional. Bool. Default: false.
-
-Enable [multi-phase experiment](../AdvancedFeature/MultiPhase.md).
 
 ### multiThread
 
@@ -525,7 +512,7 @@ Used to specify designated GPU devices for NNI, if it is set, only the specified
 
 #### maxTrialNumPerGpu
 
-Optional. Integer. Default: 99999.
+Optional. Integer. Default: 1.
   
 Used to specify the max concurrency trial number on a GPU device.
     
@@ -541,9 +528,9 @@ Required in remote mode. A list of key-value pairs with the following keys.
 
 #### ip
 
-Required. IP address that is accessible from the current machine.
+Required. IP address or host name that is accessible from the current machine.
 
-The IP address of remote machine.
+The IP address or host name of remote machine.
 
 #### port
 

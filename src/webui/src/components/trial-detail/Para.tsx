@@ -1,6 +1,7 @@
 import * as React from 'react';
 import ReactEcharts from 'echarts-for-react';
 import { filterByStatus } from '../../static/function';
+import { EXPERIMENT } from '../../static/datamodel';
 import { Stack, PrimaryButton, Dropdown, IDropdownOption, } from 'office-ui-fabric-react'; // eslint-disable-line no-unused-vars
 import { ParaObj, Dimobj, TableObj } from '../../static/interface'; // eslint-disable-line no-unused-vars
 import 'echarts/lib/chart/parallel';
@@ -98,7 +99,13 @@ class Para extends React.Component<ParaProps, ParaState> {
             // according acc to sort ydata // sort to find top percent dataset
             if (paraYdata.length !== 0) {
                 const len = paraYdata[0].length - 1;
-                paraYdata.sort((a, b) => b[len] - a[len]);
+                // show top trials
+                if (EXPERIMENT.optimizeMode === 'minimize') {
+                    paraYdata.sort((a, b) => a[len] - b[len]);
+                }
+                if (EXPERIMENT.optimizeMode === 'maximize') {
+                    paraYdata.sort((a, b) => b[len] - a[len]);
+                }
             }
             const paraData = {
                 parallelAxis: parallelAxis,
@@ -584,10 +591,12 @@ class Para extends React.Component<ParaProps, ParaState> {
         this.reInit();
     }
 
-    componentWillReceiveProps(nextProps: ParaProps): void {
-        const { dataSource, expSearchSpace, whichGraph } = nextProps;
-        if (whichGraph === '2') {
-            this.hyperParaPic(dataSource, expSearchSpace);
+    componentDidUpdate(prevProps: ParaProps): void {
+        if(this.props.dataSource !== prevProps.dataSource) {
+            const { dataSource, expSearchSpace, whichGraph } = this.props;
+            if (whichGraph === 'Hyper-parameter') {
+                this.hyperParaPic(dataSource, expSearchSpace);
+            }
         }
     }
 

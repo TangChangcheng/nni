@@ -118,7 +118,9 @@ trainer.export(file="model_dir/final_architecture.json")  # 将最终架构导�
 
 用户可直接通过 `python3 train.py` 开始训练，不需要使用 `nnictl`。 训练完成后，可通过 `trainer.export()` 导出找到的最好的模型。
 
-通常，Trainer 会提供一些可以自定义的参数。 如，损失函数，指标函数，优化器以及数据集。 这些功能可满足大部分需求，NNI 会尽力让内置 Trainer 能够处理更多的模型、任务和数据集。 但无法保证全面的支持。 例如，一些 Trainer 假设必须是分类任务；一些 Trainer 对 "Epoch" 的定义有所不同（例如，ENAS 的 epoch 表示一部分子步骤加上一些 Controller 的步骤）；大多数 Trainer 不支持分布式训练，不会将模型通过 `DataParallel` 或 `DistributedDataParallel` 进行包装。 如果通过试用，想要在定制的应用中使用 Trainer，可能需要[自定义 Trainer](#extend-the-ability-of-one-shot-trainers)。
+通常，Trainer 会提供一些可以自定义的参数。 如，损失函数，指标函数，优化器以及数据集。 这些功能可满足大部分需求，NNI 会尽力让内置 Trainer 能够处理更多的模型、任务和数据集。 但无法保证全面的支持。 例如，一些 Trainer 假设必须是分类任务；一些 Trainer 对 "Epoch" 的定义有所不同（例如，ENAS 的 epoch 表示一部分子步骤加上一些 Controller 的步骤）；大多数 Trainer 不支持分布式训练，不会将模型通过 `DataParallel` 或 `DistributedDataParallel` 进行包装。 如果通过试用，想要在定制的应用中使用 Trainer，可能需要[自定义 Trainer](./Advanced.md#extend-the-ability-of-one-shot-trainers)。
+
+此外，可以使用 NAS 可视化来显示 One-Shot NAS。 [了解详情](./Visualization.md)。
 
 ### 分布式 NAS
 
@@ -146,19 +148,30 @@ nni.report_final_result(acc)  # 报告所选架构的性能
 
 ### 使用导出的架构重新训练
 
-搜索阶段后，就该训练找到的架构了。 与很多开源 NAS 算法不同，它们为重新训练专门写了新的模型。 我们发现搜索模型和重新训练模型的过程非常相似，因而可直接将一样的模型代码用到最终模型上。 例如：
+搜索阶段后，就该训练找到的架构了。 与很多开源 NAS 算法不同，这些算法为重新训练实现了新的模型。 实际上搜索模型和重新训练模型的过程非常相似，因而可直接将一样的模型代码用到最终模型上。 例如
 
 ```python
 model = Net()
 apply_fixed_architecture(model, "model_dir/final_architecture.json")
 ```
 
-JSON 文件是从 Mutable key 到 Choice 的表示。 例如：
+此 JSON 是从 Mutable 键值到 Choice 的映射。 Choice 可为：
+
+* string: 根据名称来指定候选项。
+* number: 根据索引来指定候选项。
+* string 数组: 根据名称来指定候选项。
+* number 数组: 根据索引来指定候选项。
+* boolean 数组: 可直接选定多项的数组。
+
+例如：
 
 ```json
 {
-    "LayerChoice1": [false, true, false, false],
-    "InputChoice2": [true, true, false]
+    "LayerChoice1": "conv5x5",
+    "LayerChoice2": 6,
+    "InputChoice3": ["layer1", "layer3"],
+    "InputChoice4": [1, 2],
+    "InputChoice5": [false, true, false, false, true]
 }
 ```
 

@@ -1,5 +1,88 @@
 # ChangeLog
 
+## Release 1.6 - 5/26/2020
+
+### Major Features
+
+#### New Features and improvement
+* Improve IPC limitation to 100W
+* improve code storage upload logic among trials in non-local platform
+* support `__version__` for SDK version
+* support windows dev intall
+
+#### Web UI
+* Show trial error message
+* finalize homepage layout
+* Refactor overview's best trials module
+* Remove multiphase from webui
+* add tooltip for trial concurrency in the overview page
+* Show top trials for hyper-parameter graph
+
+#### HPO Updates
+* Improve PBT on failure handling and support experiment resume for PBT
+
+#### NAS Updates
+* NAS support for TensorFlow 2.0 (preview) [TF2.0 NAS examples](https://github.com/microsoft/nni/tree/master/examples/nas/naive-tf)
+* Use OrderedDict for LayerChoice
+* Prettify the format of export
+* Replace layer choice with selected module after applied fixed architecture
+
+#### Model Compression Updates
+* Model compression PyTorch 1.4 support
+
+#### Training Service Updates
+* update pai yaml merge logic
+* support windows as remote machine in remote mode [Remote Mode](https://github.com/microsoft/nni/blob/master/docs/en_US/TrainingService/RemoteMachineMode.md#windows)
+
+### Bug Fix
+* fix dev install
+* SPOS example crash when the checkpoints do not have state_dict
+* Fix table sort issue when experiment had failed trial
+* Support multi python env (conda, pyenv etc)
+
+
+## Release 1.5 - 4/13/2020
+
+### New Features and Documentation
+
+#### Hyper-Parameter Optimizing
+
+* New tuner: [Population Based Training (PBT)](https://github.com/microsoft/nni/blob/master/docs/en_US/Tuner/PBTTuner.md)
+* Trials can now report infinity and NaN as result
+
+#### Neural Architecture Search
+
+* New NAS algorithm: [TextNAS](https://github.com/microsoft/nni/blob/master/docs/en_US/NAS/TextNAS.md)
+* ENAS and DARTS now support [visualization](https://github.com/microsoft/nni/blob/master/docs/en_US/NAS/Visualization.md) through web UI.
+
+#### Model Compression
+
+* New Pruner: [GradientRankFilterPruner](https://github.com/microsoft/nni/blob/master/docs/en_US/Compressor/Pruner.md#gradientrankfilterpruner)
+* Compressors will validate configuration by default
+* Refactor: Adding optimizer as an input argument of pruner, for easy support of DataParallel and more efficient iterative pruning. This is a broken change for the usage of iterative pruning algorithms.
+* Model compression examples are refactored and improved
+* Added documentation for [implementing compressing algorithm](https://github.com/microsoft/nni/blob/master/docs/en_US/Compressor/Framework.md)
+
+#### Training Service
+
+* Kubeflow now supports pytorchjob crd v1 (thanks external contributor @jiapinai)
+* Experimental [DLTS](https://github.com/microsoft/nni/blob/master/docs/en_US/TrainingService/DLTSMode.md) support
+
+#### Overall Documentation Improvement
+
+* Documentation is significantly improved on grammar, spelling, and wording (thanks external contributor @AHartNtkn)
+
+### Fixed Bugs
+
+* ENAS cannot have more than one LSTM layers (thanks external contributor @marsggbo)
+* NNI manager's timers will never unsubscribe (thanks external contributor @guilhermehn)
+* NNI manager may exhaust head memory (thanks external contributor @Sundrops)
+* Batch tuner does not support customized trials (#2075)
+* Experiment cannot be killed if it failed on start (#2080)
+* Non-number type metrics break web UI (#2278)
+* A bug in lottery ticket pruner
+* Other minor glitches
+
 ## Release 1.4 - 2/19/2020
 
 ### Major Features
@@ -164,7 +247,7 @@
 
 * Documentation
     - Update the docs structure  -Issue #1231
-    - [Multi phase document improvement](AdvancedFeature/MultiPhase.md)   -Issue #1233  -PR #1242
+    - (deprecated) Multi phase document improvement   -Issue #1233  -PR #1242
          + Add configuration example
     - [WebUI description improvement](Tutorial/WebUI.md)  -PR #1419
 
@@ -192,12 +275,10 @@
     * Add `enas-mode`  and `oneshot-mode` for NAS interface: [PR #1201](https://github.com/microsoft/nni/pull/1201#issue-291094510)
 * [Gaussian Process Tuner with Matern kernel](Tuner/GPTuner.md) 
 
-* Multiphase experiment supports
+* (deprecated) Multiphase experiment supports
     * Added new training service support for multiphase experiment: PAI mode supports multiphase experiment since v0.9.
     * Added multiphase capability for the following builtin tuners: 
         * TPE, Random Search, Anneal, Naïve Evolution, SMAC, Network Morphism, Metis Tuner.
-    
-    For details, please refer to [Write a tuner that leverages multi-phase](AdvancedFeature/MultiPhase.md)
 
 * Web Portal
     * Enable trial comparation in Web Portal. For details, refer to [View trials status](Tutorial/WebUI.md)
@@ -507,4 +588,3 @@ Initial release of Neural Network Intelligence (NNI).
   * Support CI by providing out-of-box integration with [travis-ci](https://github.com/travis-ci) on ubuntu
 * Others
   * Support simple GPU job scheduling
-

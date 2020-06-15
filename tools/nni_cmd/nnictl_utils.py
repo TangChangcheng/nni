@@ -227,7 +227,7 @@ def stop_experiment(args):
         experiment_config = Experiments()
         experiment_dict = experiment_config.get_all_experiments()
         for experiment_id in experiment_id_list:
-            print_normal('Stoping experiment %s' % experiment_id)
+            print_normal('Stopping experiment %s' % experiment_id)
             nni_config = Config(experiment_dict[experiment_id]['fileName'])
             rest_pid = nni_config.get_config('restServerPid')
             if rest_pid:
@@ -699,12 +699,16 @@ def export_trials_data(args):
                 content = json.loads(response.text)
                 trial_records = []
                 for record in content:
-                    if not isinstance(record['value'], (float, int)):
-                        formated_record = {**record['parameter'], **record['value'], **{'id': record['id']}}
+                    record_value = json.loads(record['value'])
+                    if not isinstance(record_value, (float, int)):
+                        formated_record = {**record['parameter'], **record_value, **{'id': record['id']}}
                     else:
-                        formated_record = {**record['parameter'], **{'reward': record['value'], 'id': record['id']}}
+                        formated_record = {**record['parameter'], **{'reward': record_value, 'id': record['id']}}
                     trial_records.append(formated_record)
-                with open(args.path, 'w') as file:
+                if not trial_records:
+                    print_error('No trial results collected! Please check your trial log...')
+                    exit(0)
+                with open(args.path, 'w', newline='') as file:
                     writer = csv.DictWriter(file, set.union(*[set(r.keys()) for r in trial_records]))
                     writer.writeheader()
                     writer.writerows(trial_records)

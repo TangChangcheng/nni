@@ -222,7 +222,6 @@ assessor_schema_dict = {
         'builtinAssessorName': 'Curvefitting',
         Optional('classArgs'): {
             'epoch_num': setNumberRange('epoch_num', int, 0, 9999),
-            Optional('optimize_mode'): setChoice('optimize_mode', 'maximize', 'minimize'),
             Optional('start_step'): setNumberRange('start_step', int, 0, 9999),
             Optional('threshold'): setNumberRange('threshold', float, 0, 9999),
             Optional('gap'): setNumberRange('gap', int, 1, 9999),
@@ -287,13 +286,13 @@ pai_trial_schema = {
         'codeDir': setPathCheck('codeDir'),
         'nniManagerNFSMountPath': setPathCheck('nniManagerNFSMountPath'),
         'containerNFSMountPath': setType('containerNFSMountPath', str),
-        'command': setType('command', str),
+        Optional('command'): setType('command', str),
         Optional('gpuNum'): setNumberRange('gpuNum', int, 0, 99999),
         Optional('cpuNum'): setNumberRange('cpuNum', int, 0, 99999),
         Optional('memoryMB'): setType('memoryMB', int),
         Optional('image'): setType('image', str),
         Optional('virtualCluster'): setType('virtualCluster', str),
-        Optional('paiStoragePlugin'): setType('paiStoragePlugin', str),
+        Optional('paiStorageConfigName'): setType('paiStorageConfigName', str),
         Optional('paiConfigPath'): And(os.path.exists, error=SCHEMA_PATH_ERROR % 'paiConfigPath')
     }
 }

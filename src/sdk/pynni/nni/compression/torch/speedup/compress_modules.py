@@ -14,7 +14,11 @@ replace_module = {
     'AvgPool2d': lambda module, mask: no_replace(module, mask),
     'AdaptiveAvgPool2d': lambda module, mask: no_replace(module, mask),
     'ReLU': lambda module, mask: no_replace(module, mask),
-    'Linear': lambda module, mask: replace_linear(module, mask)
+    'ReLU6': lambda module, mask: no_replace(module, mask),
+    'Linear': lambda module, mask: replace_linear(module, mask),
+    'Dropout': lambda module, mask: no_replace(module, mask),
+    'Dropout2d': lambda module, mask: no_replace(module, mask),
+    'Dropout3d': lambda module, mask: no_replace(module, mask)
 }
 
 def no_replace(module, mask):
@@ -118,21 +122,42 @@ def replace_conv2d(conv, mask):
                                stride=conv.stride,
                                padding=conv.padding,
                                dilation=conv.dilation,
-                               groups=1, # currently only support groups is 1
+                               groups=conv.groups,
                                bias=conv.bias is not None,
                                padding_mode=conv.padding_mode)
+
     new_conv.to(conv.weight.device)
     tmp_weight_data = tmp_bias_data = None
     if mask.output_mask is not None:
         tmp_weight_data = torch.index_select(conv.weight.data, 0, out_channels_index)
         if conv.bias is not None:
             tmp_bias_data = torch.index_select(conv.bias.data, 0, out_channels_index)
+    else:
+        tmp_weight_data = conv.weight.data
+    # For the convolutional layers that have more than one group
+    # we need to copy the weight group by group, because the input
+    # channal is also divided into serveral groups and each group
+    # filter may have different input channel indexes.
+    input_step = int(conv.in_channels / conv.groups)
+    filter_step = int(out_channels / conv.groups)
     # NOTE: does not support group
     if mask.input_mask is not None:
-        tmp_weight_data = torch.index_select(conv.weight.data if tmp_weight_data is None else tmp_weight_data,
-                                             1, in_channels_index)
-    assert tmp_weight_data is not None, "Conv2d weight should be updated based on masks"
-    new_conv.weight.data.copy_(tmp_weight_data)
+        for groupid in range(conv.groups):
+            start = groupid * input_step
+            end = (groupid + 1) * input_step
+            current_input_index = list(filter(lambda x: start <= x and x < end, in_channels_index.tolist()))
+            # shift the global index into the group index
+            current_input_index = [x-start for x in current_input_index]
+            current_input_index = torch.tensor(current_input_index).to(tmp_weight_data.device) # pylint: disable=not-callable
+            f_start = groupid * filter_step
+            f_end = (groupid + 1) * filter_step
+            new_conv.weight.data[f_start:f_end] = torch.index_select(tmp_weight_data[f_start:f_end], 1, current_input_index)
+    else:
+        new_conv.weight.data.copy_(tmp_weight_data)
+    #     tmp_weight_data = torch.index_select(conv.weight.data if tmp_weight_data is None else tmp_weight_data,
+    #                                          1, in_channels_index)
+    # assert tmp_weight_data is not None, "Conv2d weight should be updated based on masks"
+    # new_conv.weight.data.copy_(tmp_weight_data)
     if conv.bias is not None:
         new_conv.bias.data.copy_(conv.bias.data if tmp_bias_data is None else tmp_bias_data)
     return new_conv

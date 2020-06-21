@@ -8,11 +8,13 @@ The other is given input shape, infer its output shape and initialization parame
 
 import torch
 
+
 class CoarseMask:
     """
     Coarse grained mask for a given tensor, here tensor could be weights,
     input tensor, or output tensor
     """
+
     def __init__(self, num_dim):
         """
         Parameters
@@ -25,7 +27,6 @@ class CoarseMask:
     def add_index_mask(self, dim, index):
         """
         Add mask for the specified dimension
-
         Parameters
         ----------
         dim : int
@@ -45,28 +46,38 @@ class CoarseMask:
             One index (1-dimension) tensor
         index_b : tensor
             The other index (1-dimension) tensor
-
         Returns
         -------
         tensor
             The merged index (1-dimension) tensor
+            Note that: the output tensor will be moved
+            to the same device as index_a.
         """
+        device = index_a.device
         s = set()
-        for num in index_a:
+        for num in index_a.tolist():
+            # we need to transfer the tensor to list here
+            # first, directly traversing the tensor by for
+            # loop will return the list of tensor(x) object,
+            # even the value are the same, but they are different
+            # tensor objects, so the set will contains multiple
+            # tensor objects that has the same value. For example
+            # for num in torch.ones(2):
+            #   s.add(num)
+            # s will be {tensor(1), tensor(1)}
             s.add(num)
-        for num in index_b:
+        for num in index_b.tolist():
             s.add(num)
-        return torch.tensor(sorted(s)) # pylint: disable=not-callable
+        # move the output tensor to the same device with index_a
+        return torch.tensor(sorted(s)).to(device)  # pylint: disable=not-callable
 
     def merge(self, cmask):
         """
         Merge another CoarseMask
-
         Parameters
         ----------
         cmask : CoarseMask
             Another CoarseMask to merge
-
         Returns
         -------
         list
@@ -86,10 +97,65 @@ class CoarseMask:
     def __repr__(self):
         return 'mask_index: {}'.format(self.mask_index)
 
+    def eq_on_dim(self, other, dim):
+        assert isinstance(other, CoarseMask)
+        if self.mask_index[dim] is None and other.mask_index[dim] is None:
+            return True
+        elif isinstance(self.mask_index[dim], torch.Tensor) \
+                and isinstance(other.mask_index[dim], torch.Tensor):
+            return torch.equal(self.mask_index[dim], other.mask_index[dim])
+        else:
+            return False
+
+    def __eq__(self, other):
+        assert isinstance(other, CoarseMask)
+        if len(self.mask_index) != len(other.mask_index):
+            return False
+        for i in range(len(self.mask_index)):
+            if not self.eq_on_dim(other, i):
+                return False
+        return True
+
+    def __lt__(self, other):
+        """
+        Judge if the mask is a subset of another CoarseMask.
+        """
+        assert isinstance(other, CoarseMask)
+        for dim, _ in enumerate(self.mask_index):
+            # if self has more dimensions
+            if dim >= len(other.mask_index):
+                return False
+            if self.mask_index[dim] is None:
+                # if no mask on this dimension, then we have less
+                # masks then the other CoraseMask.
+                continue
+            elif other.mask_index[dim] is None:
+                return False
+            else:
+                s1 = set(self.mask_index[dim].tolist())
+                s2 = set(other.mask_index[dim].tolist())
+                if not s1 < s2:
+                    return False
+        return True
+
+    def __le__(self, other):
+        """
+        Return if self's mask is less or equal to other's mask.
+        """
+        assert isinstance(other, CoarseMask)
+        if self.__lt__(other) or self.__eq__(other):
+            return True
+        return False
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+
 class ModuleMasks:
     """
     The masks of a module, including the masks for weights, inputs, output
     """
+
     def __init__(self, module_name):
         """
         Parameters
@@ -136,6 +202,7 @@ class ModuleMasks:
             self.input_mask, self.output_mask, self.param_masks
         )
 
+
 """
 Infer input and output shape of a module/function from its weight mask
 """
@@ -149,6 +216,7 @@ Infer output and weight shape of a module/function from its input shape
 """
 infer_from_inshape = {
     'ReLU': lambda module_masks, mask: relu_inshape(module_masks, mask),
+    'ReLU6': lambda module_masks, mask: relu_inshape(module_masks, mask),
     'aten::relu': lambda module_masks, mask: relu_inshape(module_masks, mask),
     'Conv2d': lambda module_masks, mask: conv2d_inshape(module_masks, mask),
     'MaxPool2d': lambda module_masks, mask: maxpool2d_inshape(module_masks, mask),
@@ -158,9 +226,15 @@ infer_from_inshape = {
     'AdaptiveAvgPool2d': lambda module_masks, mask: maxpool2d_inshape(module_masks, mask),
     'aten::size': lambda module_masks, mask: size_inshape(module_masks, mask),
     'aten::view': lambda module_masks, mask, shape: view_inshape(module_masks, mask, shape),
-    'aten::flatten': lambda module_masks, mask, shape: view_inshape(module_masks, mask, shape), # support only start_dim=1
+    # support only start_dim=1
+    'aten::flatten': lambda module_masks, mask, shape: view_inshape(module_masks, mask, shape),
     'Linear': lambda module_masks, mask: linear_inshape(module_masks, mask),
-    'BatchNorm2d': lambda module_masks, mask: batchnorm2d_inshape(module_masks, mask)
+    'BatchNorm2d': lambda module_masks, mask: batchnorm2d_inshape(module_masks, mask),
+    'aten::add_': lambda module_masks, mask: add_inshape(module_masks, mask),
+    'aten::add': lambda module_mask, mask: add_inshape(module_mask, mask),
+    'aten::cat': lambda module_mask, mask, cat_info, last_visited: cat_inshape(module_mask, mask, cat_info, last_visited),
+    'aten::mean': lambda module_masks, mask, shape: mean_inshape(module_masks, mask, shape),
+    'Dropout': lambda module_masks, mask: dropout_inshape(module_masks, mask)
 }
 
 """
@@ -170,17 +244,126 @@ infer_from_outshape = {
     'Conv2d': lambda module_masks, mask: conv2d_outshape(module_masks, mask)
 }
 
-def batchnorm2d_inshape(module_masks, mask):
-    """
-    We assume only the second dimension has coarse grained mask
+def dropout_inshape(module_masks, mask):
+    if module_masks.input_mask is None:
+        module_masks.set_input_mask(mask)
+        module_masks.set_output_mask(mask)
+        return module_masks.output_mask
+    # if alreay visited
+    assert module_masks.input_mask <= mask
+    if module_masks.input_mask == mask:
+        return None
+    module_masks.set_input_mask(mask)
+    module_masks.set_output_mask(mask)
+    return module_masks.output_mask
 
+
+
+def cat_inshape(module_masks, mask, cat_info, last_visited):
+    """
+    Inference the output mask of the cat operation from the
+    input mask.
     Parameters
     ----------
     module_masks : ModuleMasks
         The ModuleMasks instance of the batchnorm2d
     mask : CoarseMask
         The mask of its input tensor
+    cat_info: dict
+        Dict object that records the necessary information
+        of cat operation, such as the order of the input
+        tensors.
+    last_visited: str
+        The unique_name of the last visited node group.
+    Returns
+    -------
+    CoarseMask
+        The mask of its output tensor
+    """
+    assert isinstance(mask, CoarseMask)
+    out_shape = cat_info['out_shape']
+    cat_dim = cat_info['cat_dim']
+    in_order = cat_info['in_order']
+    in_shape = cat_info['in_shape']
+    if module_masks.output_mask is None:
+        # First visit to this cat node
+        # initialize the mask based on
+        # the number of the output channel.
+        output_mask = CoarseMask(num_dim=len(out_shape))
+        for dim, _ in enumerate(out_shape):
+            if dim == cat_dim:
+                if mask.mask_index[dim] is None:
+                    continue
+                device = mask.mask_index[dim].device
+                # calculate the offset of the mask
+                pos = in_order.index(last_visited)
+                offsets = [in_shape[i][cat_dim]
+                           for i, _ in enumerate(in_shape)]
+                offset = 0
+                for i in range(pos):
+                    offset += offsets[i]
+                _tmp_mask = (mask.mask_index[dim] + offset).to(device)
+                output_mask.mask_index[dim] = _tmp_mask
+            else:
+                # directly copy the mask
+                if mask.mask_index[dim] is not None:
+                    output_mask.mask_index[dim] = mask.mask_index[dim].data.clone(
+                    )
+        module_masks.set_output_mask(output_mask)
 
+        return module_masks.output_mask
+    # If this cat node is already visited, we need
+    # validating if the mask is legel, for cat operation,
+    # the mask on the 'cat_dim' dimension should be stitched
+    # together. In the other dimensions, the mask should be
+    # the same, else the mask is not legal.
+    for dim, _ in enumerate(out_shape):
+        if dim == cat_dim:
+            if mask.mask_index[dim] is None:
+                continue
+            pos = in_order.index(last_visited)
+            offsets = [in_shape[i][cat_dim] for i, _ in enumerate(in_shape)]
+            offset = 0
+            for i in range(pos):
+                offset += offsets[i]
+            device = mask.mask_index[dim].device
+            new_mask = mask.mask_index[dim] + offset
+            module_masks.output_mask.mask_index[dim] = CoarseMask.merge_index(
+                module_masks.output_mask.mask_index[dim], new_mask).to(device)
+        else:
+            assert module_masks.output_mask.eq_on_dim(mask, dim)
+
+    return module_masks.output_mask
+
+
+def add_inshape(module_masks, mask):
+    """
+    Inference the output mask of the add operation from the
+    input mask.
+    """
+    assert isinstance(mask, CoarseMask)
+    if module_masks.input_mask is None:
+        module_masks.set_input_mask(mask)
+        module_masks.set_output_mask(mask)
+        # module_masks.input_mask = mask
+        return mask
+    # If alreay visited, validate if have the conflict
+    # if the mask is different with previous input_mask
+    # then there is a mask confilct.
+    if mask != module_masks.input_mask:
+        raise Exception('Mask conflict happenes!')
+    return None
+
+
+def batchnorm2d_inshape(module_masks, mask):
+    """
+    We assume only the second dimension has coarse grained mask
+    Parameters
+    ----------
+    module_masks : ModuleMasks
+        The ModuleMasks instance of the batchnorm2d
+    mask : CoarseMask
+        The mask of its input tensor
     Returns
     -------
     CoarseMask
@@ -199,17 +382,16 @@ def batchnorm2d_inshape(module_masks, mask):
     module_masks.set_param_masks('bias', weight_cmask)
     return mask
 
+
 def linear_inshape(module_masks, mask):
     """
     Coarse grained input mask does not change the shape of weights and output tensor
-
     Parameters
     ----------
     module_masks : ModuleMasks
         The ModuleMasks instance of the linear
     mask : CoarseMask
         The mask of its input tensor
-
     Returns
     -------
     CoarseMask
@@ -221,13 +403,12 @@ def linear_inshape(module_masks, mask):
     module_masks.set_input_mask(mask)
     return None
 
+
 def view_inshape(module_masks, mask, shape):
     """
     This is a limited support
-
     TODO: consider replace tensor.view with nn.Flatten, because tensor.view is not
     included in module, thus, cannot be replaced by our framework.
-
     Parameters
     ----------
     module_masks : ModuleMasks
@@ -236,7 +417,6 @@ def view_inshape(module_masks, mask, shape):
         The mask of its input tensor
     shape : dict
         Original shape of its input and output tensors
-
     Returns
     -------
     CoarseMask
@@ -246,7 +426,8 @@ def view_inshape(module_masks, mask, shape):
     assert shape['in_shape'][0] == shape['out_shape'][0]
     assert len(shape['in_shape']) == 4
     assert len(shape['out_shape']) == 2
-    assert shape['out_shape'][1] == shape['in_shape'][1]*shape['in_shape'][2]*shape['in_shape'][3]
+    assert shape['out_shape'][1] == shape['in_shape'][1] * \
+        shape['in_shape'][2]*shape['in_shape'][3]
 
     assert isinstance(mask, CoarseMask)
     assert mask.mask_index[1] is not None
@@ -260,7 +441,7 @@ def view_inshape(module_masks, mask, shape):
     step_size = shape['in_shape'][2] * shape['in_shape'][3]
     for loc in mask.mask_index[1]:
         index.extend([loc * step_size + i for i in range(step_size)])
-    output_cmask.add_index_mask(dim=1, index=torch.tensor(index)) # pylint: disable=not-callable
+    output_cmask.add_index_mask(dim=1, index=torch.tensor(index))  # pylint: disable=not-callable
     module_masks.set_output_mask(output_cmask)
     return output_cmask
 
@@ -271,17 +452,37 @@ def size_inshape(module_masks, mask):
     """
     return None
 
+def mean_inshape(module_masks, mask, shape):
+    """
+    Similar to view operation, currently mask inference only supports
+    the mean operation on the 3rd and 4th dimensions.
+    """
+    assert shape['in_shape'][0] == shape['out_shape'][0]
+    assert shape['out_shape'][1] == shape['in_shape'][1]
+    assert len(shape['in_shape']) == 4
+    assert len(shape['out_shape']) == 2
+
+    assert isinstance(mask, CoarseMask)
+    assert mask.mask_index[1] is not None
+    assert mask.mask_index[0] is None
+    assert mask.mask_index[2] is None
+    assert mask.mask_index[3] is None
+    module_masks.set_input_mask(mask)
+
+    output_cmask = CoarseMask(num_dim=2)
+    output_cmask.add_index_mask(dim=1, index=mask.mask_index[1])
+    module_masks.set_output_mask(output_cmask)
+    return output_cmask
+
 def maxpool2d_inshape(module_masks, mask):
     """
     Assume only the second dimension is masked
-
     Parameters
     ----------
     module_masks : ModuleMasks
         The ModuleMasks instance of the maxpool2d
     mask : CoarseMask
         The mask of its input tensor
-
     Returns
     -------
     CoarseMask
@@ -292,10 +493,13 @@ def maxpool2d_inshape(module_masks, mask):
     assert mask.mask_index[0] is None
     assert mask.mask_index[2] is None
     assert mask.mask_index[3] is None
-    assert module_masks.input_mask is None
+    if module_masks.input_mask is not None:
+        assert module_masks.input_mask <= mask
+    # assert module_masks.input_mask is None
     module_masks.set_input_mask(mask)
     module_masks.set_output_mask(mask)
     return mask
+
 
 def relu_inshape(module_masks, mask):
     """
@@ -305,7 +509,6 @@ def relu_inshape(module_masks, mask):
         The ModuleMasks instance of the relu
     mask : CoarseMask
         The mask of its input tensor
-
     Returns
     -------
     CoarseMask
@@ -313,22 +516,26 @@ def relu_inshape(module_masks, mask):
     """
     assert isinstance(mask, CoarseMask)
     # TODO: double check this assert, is it possible that a module is passed twice
-    assert module_masks.input_mask is None, "A relu op can only be processed once"
+    if module_masks.input_mask is not None:
+        # check if has a mask conflict
+        assert module_masks.input_mask == mask
+        # No need to pass the mask again
+        return None
+    # assert module_masks.input_mask is None, "A relu op can only be processed once"
     module_masks.set_input_mask(mask)
     module_masks.set_output_mask(mask)
     return mask
 
+
 def batchnorm2d_mask(module_masks, mask):
     """
     Infer input and output shape from weight mask
-
     Parameters
     ----------
     module_masks : ModuleMasks
         The ModuleMasks instance of the batchnorm2d
     mask : dict
         The mask of its weights, from the user provided mask file
-
     Returns
     -------
     CoarseMask, CoarseMask
@@ -353,17 +560,16 @@ def batchnorm2d_mask(module_masks, mask):
     module_masks.set_output_mask(output_cmask)
     return input_cmask, output_cmask
 
+
 def conv2d_mask(module_masks, mask):
     """
     Infer input and output shape from weight mask
-
     Parameters
     ----------
     module_masks : ModuleMasks
         The ModuleMasks instance of the conv2d
     mask : dict
         The mask of its weights, from the user provided mask file
-
     Returns
     -------
     CoarseMask, CoarseMask
@@ -375,7 +581,6 @@ def conv2d_mask(module_masks, mask):
         ----------
         mask : dict
             Weight mask from user provided mask file
-
         Returns
         -------
         LongTensor, CoarseMask, CoarseMask
@@ -429,38 +634,41 @@ def conv2d_mask(module_masks, mask):
         module_masks.output_mask.merge(output_cmask)
     return None, module_masks.output_mask
 
+
 def conv2d_inshape(module_masks, mask):
     """
     Shape change of input tensor does not affect the shape of its output tensor
-
     Parameters
     ----------
     module_masks : ModuleMasks
         The ModuleMasks instance of the conv2d
     mask : CoarseMask
         The mask of its input tensor
-
     Returns
     -------
     CoarseMask
         The mask of its output tensor
     """
     assert isinstance(mask, CoarseMask)
-    assert module_masks.input_mask is None
-    module_masks.set_input_mask(mask)
+    if module_masks.input_mask is None:
+        module_masks.set_input_mask(mask)
+    else:
+        # the same conv layer may be accessed more
+        # than once, such as a concat operation.
+        assert module_masks.input_mask <= mask
+        module_masks.input_mask.merge(mask)
     return None
+
 
 def conv2d_outshape(module_masks, mask):
     """
     Assume only the second dimension is masked
-
     Parameters
     ----------
     module_masks : ModuleMasks
         The ModuleMasks instance of the conv2d
     mask : CoarseMask
         The mask of its output tensor
-
     Returns
     -------
     CoarseMask
@@ -487,4 +695,3 @@ def conv2d_outshape(module_masks, mask):
     module_masks.set_param_masks('bias', bias_cmask)
     # input shape is not changed
     return None
-    

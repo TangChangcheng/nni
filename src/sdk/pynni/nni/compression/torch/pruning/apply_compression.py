@@ -21,7 +21,10 @@ def apply_compression_results(model, masks_file, map_location=None):
     map_location : str
         the device on which masks are placed, same to map_location in ```torch.load```
     """
-    masks = torch.load(masks_file, map_location)
+    if isinstance(masks_file, str):
+        masks = torch.load(masks_file, map_location)
+    else:
+        masks = masks_file
     for name, module in model.named_modules():
         if name in masks:
             module.weight.data = module.weight.data.mul_(masks[name]['weight'])

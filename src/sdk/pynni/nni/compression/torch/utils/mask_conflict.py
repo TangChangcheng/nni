@@ -5,7 +5,7 @@ import logging
 import torch
 import numpy as np
 from .shape_dependency import ChannelDependency, GroupDependency, CatPaddingDependency
-# logging.basicConfig(level = logging.DEBUG)
+logging.basicConfig(level = logging.DEBUG)
 _logger = logging.getLogger('FixMaskConflict')
 
 def fix_mask_conflict(masks, model=None, dummy_input=None, traced=None):
@@ -180,7 +180,7 @@ class GroupMaskConflict(MaskFix):
                     # groups, we set the masks of following filters to be zero.
                     pos = gm[i]
                     self.masks[layername]['weight'][pos] = torch.ones(shape[1:])
-                    if hasattr(self.masks[layername], 'bias'):
+                    if hasattr(self.masks[layername], 'bias') or 'bias' in self.masks[layername] and self.masks[layername]['bias'] is not None:
                         self.masks[layername]['bias'][pos] = 1
         return self.masks
 
@@ -224,6 +224,7 @@ class ChannelMaskConflict(MaskFix):
             # the dependency set are pruned
             all_pruned = True
             for name in dset:
+                # only conv2d and linear op
                 if name not in self.masks:
                     # this layer is not pruned
                     all_pruned = False
@@ -241,6 +242,7 @@ class ChannelMaskConflict(MaskFix):
                     _logger.info('Layers %s using fine-grained pruning', ','.join(dset))
                     fine_grained = True
                     break
+                # reserve the intersection of all pruned channels
                 channel_remain.update(all_ones)
                 _logger.debug('Layer: %s ', name)
                 _logger.debug('Original pruned filters: %s', str(all_zeros))

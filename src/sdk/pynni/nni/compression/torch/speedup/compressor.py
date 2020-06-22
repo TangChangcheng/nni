@@ -52,7 +52,10 @@ class ModelSpeedup:
             the device on which masks are placed, same to map_location in ```torch.load```
         """
         self.bound_model = model
-        self.masks = torch.load(masks_file, map_location)
+        if isinstance(masks_file, str):
+            self.masks = torch.load(masks_file, map_location)
+        else:
+            self.masks = masks_file
         self.inferred_masks = dict() # key: module_name, value: ModuleMasks
         self.dummy_input = dummy_input
         self.torch_graph = build_module_graph(model, dummy_input)

@@ -130,7 +130,7 @@ class ModelSpeedup:
         if output_cmask:
             successors = self.torch_graph.find_successors(module_name)
             for _module_name in successors:
-                self.infer_module_mask(_module_name, module_name, out_shape=input_cmask)
+                self.infer_module_mask(_module_name, module_name, in_shape=output_cmask)
 
     def infer_modules_masks(self):
         """

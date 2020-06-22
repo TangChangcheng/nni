@@ -144,8 +144,11 @@ class GroupMaskConflict(MaskFix):
                 continue
             w_mask = self.masks[layername]['weight']
             shape = w_mask.size()
+            # output channel
             count = np.prod(shape[1:])
+            # unpruned channels
             all_ones = (w_mask.flatten(1).sum(-1) == count).nonzero().squeeze(1).tolist()
+            # pruned channels
             all_zeros = (w_mask.flatten(1).sum(-1) == 0).nonzero().squeeze(1).tolist()
             if len(all_ones) + len(all_zeros) < w_mask.size(0):
                 # In fine-grained pruning, skip this layer
@@ -158,12 +161,19 @@ class GroupMaskConflict(MaskFix):
             # prune mini_masked filters for each group.
             step = shape[0] / group
             group_masked = []
+            # divide pruned channels into different groups
             for i in range(group):
                 _start = step * i
                 _end = step * (i+1)
                 _tmp_list = list(filter(lambda x: _start <= x and x < _end, all_zeros))
                 group_masked.append(_tmp_list)
             mini_masked = min([len(x) for x in group_masked])
+            """
+            the number of pruned channels accords to the most minimal pruned-number group
+            e.g. group = 4, channel = 16
+            group_masked: [[0, 1], [5], [8, 9, 10], [14, 15]]
+            -> [[0], [5], [8], [14]]
+            """
             for gm in group_masked:
                 for i in range(mini_masked, len(gm)):
                     # To keep the output channel number still being divisible to
@@ -255,7 +265,7 @@ class ChannelMaskConflict(MaskFix):
                 ori_channels = w_shape[0]
                 for i in channel_remain:
                     mask['weight'][i] = torch.ones(w_shape[1:])
-                    if hasattr(mask, 'bias'):
+                    if 'bias' in mask and mask['bias'] is not None:
                         mask['bias'][i] = 1
             _logger.info(','.join(dset))
             _logger.info('Pruned Filters after fixing conflict:')

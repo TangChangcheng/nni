@@ -15,6 +15,7 @@ replace_module = {
     'AdaptiveAvgPool2d': lambda module, mask: no_replace(module, mask),
     'ReLU': lambda module, mask: no_replace(module, mask),
     'ReLU6': lambda module, mask: no_replace(module, mask),
+    'Sigmoid': lambda module, mask: no_replace(module, mask),
     'Linear': lambda module, mask: replace_linear(module, mask),
     'Dropout': lambda module, mask: no_replace(module, mask),
     'Dropout2d': lambda module, mask: no_replace(module, mask),
@@ -73,7 +74,7 @@ def replace_batchnorm2d(norm, mask):
         The new batchnorm module
     """
     assert isinstance(mask, ModuleMasks)
-    assert 'weight' in mask.param_masks and 'bias' in mask.param_masks
+    assert 'weight' in mask.param_masks and 'bias' in mask.param_masks, str(mask.param_masks.keys())
     index = mask.param_masks['weight'].mask_index[0]
     num_features = index.size()[0]
     _logger.debug("replace batchnorm2d with num_features: %d", num_features)

@@ -218,6 +218,7 @@ infer_from_inshape = {
     'ReLU': lambda module_masks, mask: relu_inshape(module_masks, mask),
     'ReLU6': lambda module_masks, mask: relu_inshape(module_masks, mask),
     'aten::relu': lambda module_masks, mask: relu_inshape(module_masks, mask),
+    'Sigmoid': lambda module_masks, mask: relu_inshape(module_masks, mask),
     'Conv2d': lambda module_masks, mask: conv2d_inshape(module_masks, mask),
     'MaxPool2d': lambda module_masks, mask: maxpool2d_inshape(module_masks, mask),
     'aten::max_pool2d': lambda module_masks, mask: maxpool2d_inshape(module_masks, mask),
@@ -232,6 +233,8 @@ infer_from_inshape = {
     'BatchNorm2d': lambda module_masks, mask: batchnorm2d_inshape(module_masks, mask),
     'aten::add_': lambda module_masks, mask: add_inshape(module_masks, mask),
     'aten::add': lambda module_mask, mask: add_inshape(module_mask, mask),
+    'aten::mul': lambda module_mask, mask: mul_inshape(module_mask, mask),
+    'aten::mul_': lambda module_mask, mask: mul_inshape(module_mask, mask),
     'aten::cat': lambda module_mask, mask, cat_info, last_visited: cat_inshape(module_mask, mask, cat_info, last_visited),
     'aten::mean': lambda module_masks, mask, shape: mean_inshape(module_masks, mask, shape),
     'Dropout': lambda module_masks, mask: dropout_inshape(module_masks, mask)
@@ -354,6 +357,23 @@ def add_inshape(module_masks, mask):
         raise Exception('Mask conflict happenes!')
     return None
 
+def mul_inshape(module_masks, mask):
+    """
+    Inference the output mask of the add operation from the
+    input mask.
+    """
+    assert isinstance(mask, CoarseMask)
+    if module_masks.input_mask is None:
+        module_masks.set_input_mask(mask)
+        module_masks.set_output_mask(mask)
+        # module_masks.input_mask = mask
+        return mask
+    # If alreay visited, validate if have the conflict
+    # if the mask is different with previous input_mask
+    # then there is a mask confilct.
+    if mask != module_masks.input_mask:
+        raise Exception('Mask conflict happenes!')
+    return None
 
 def batchnorm2d_inshape(module_masks, mask):
     """
@@ -460,7 +480,7 @@ def mean_inshape(module_masks, mask, shape):
     assert shape['in_shape'][0] == shape['out_shape'][0]
     assert shape['out_shape'][1] == shape['in_shape'][1]
     assert len(shape['in_shape']) == 4
-    assert len(shape['out_shape']) == 2
+    # assert len(shape['out_shape']) == 2 
 
     assert isinstance(mask, CoarseMask)
     assert mask.mask_index[1] is not None
@@ -469,7 +489,7 @@ def mean_inshape(module_masks, mask, shape):
     assert mask.mask_index[3] is None
     module_masks.set_input_mask(mask)
 
-    output_cmask = CoarseMask(num_dim=2)
+    output_cmask = CoarseMask(num_dim=len(shape['out_shape']))
     output_cmask.add_index_mask(dim=1, index=mask.mask_index[1])
     module_masks.set_output_mask(output_cmask)
     return output_cmask

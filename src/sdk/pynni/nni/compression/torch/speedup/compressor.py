@@ -60,6 +60,8 @@ class ModelSpeedup:
         self.dummy_input = dummy_input
         self.torch_graph = build_module_graph(model, dummy_input)
 
+        self.bfs_visited = set()
+
     def infer_module_mask(self, module_name, last_module, mask=None, in_shape=None, out_shape=None):
         """
         Infer input shape / output shape based on the module's weight mask / input shape / output shape.
@@ -83,6 +85,14 @@ class ModelSpeedup:
         out_shape : ModuleMasks
             Output shape of this node
         """
+        import ipdb; ipdb.set_trace()
+        if  module_name in self.bfs_visited:
+            print('--' * 10, module_name)
+            return
+        # if 'point_linear' in module_name:
+        #     import ipdb; ipdb.set_trace()
+        print("**" * 10, module_name)
+        self.bfs_visited.add(module_name)
         input_cmask = output_cmask = None
         if module_name in self.inferred_masks:
             module_masks = self.inferred_masks[module_name]
@@ -92,13 +102,23 @@ class ModelSpeedup:
 
         m_type = self.torch_graph.name_to_node[module_name].op_type
         _logger.debug("infer mask of module %s with op_type %s", module_name, m_type)
+
+        group = [1]
+        _mask = self.masks.get(module_name)
+        if _mask is not None:
+            group = _mask.get('group', [1])
+        module_masks.set_param_masks('group', group)
+        mask = mask or self.masks.get(module_name)
         if mask is not None:
             _logger.debug("mask is not None")
             if not m_type in infer_from_mask:
                 raise RuntimeError(
                     "Has not supported infering input/output shape from mask for module/function: `{}`, {}"
                     .format(m_type, module_name))
-            input_cmask, output_cmask = infer_from_mask[m_type](module_masks, mask)
+            try:
+                input_cmask, output_cmask = infer_from_mask[m_type](module_masks, mask)
+            except:
+                import ipdb; ipdb.set_trace()
         if in_shape is not None:
             _logger.debug("in_shape is not None")
             if not m_type in infer_from_inshape:
@@ -129,19 +149,39 @@ class ModelSpeedup:
         if input_cmask:
             predecessors = self.torch_graph.find_predecessors(module_name)
             for _module_name in predecessors:
-                self.infer_module_mask(_module_name, module_name, out_shape=input_cmask)
+                try:
+                    self.infer_module_mask(_module_name, module_name, out_shape=input_cmask)
+                except Exception as e:
+                    print(f"Error module_name: {module_name}")
+                    import traceback
+                    traceback.print_exc()
+                    import ipdb; ipdb.set_trace()
+                    raise e
         if output_cmask:
             successors = self.torch_graph.find_successors(module_name)
             for _module_name in successors:
-                self.infer_module_mask(_module_name, module_name, in_shape=output_cmask)
+                try:
+                    self.infer_module_mask(_module_name, module_name, in_shape=output_cmask)
+                except Exception as e:
+                    print(f"Error module_name: {module_name}")
+                    import traceback
+                    traceback.print_exc()
+                    import ipdb; ipdb.set_trace()
+                    raise e
 
     def infer_modules_masks(self):
         """
         Do shape inference of involved modules, including the shape of weights, inputs, output
         """
+        self.bfs_queue = []
+        self.bfs_visited = set()
         for module_name, mask in self.masks.items():
             _logger.debug('Start mask inference from %s', module_name)
-            self.infer_module_mask(module_name, None, mask=mask)
+            try:
+                self.infer_module_mask(module_name, None, mask=mask)
+            except Exception as e:
+                print(f"Error module_name: {module_name}")
+                raise e
 
     def replace_compressed_modules(self):
         """

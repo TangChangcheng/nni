@@ -68,10 +68,14 @@ class ChannelDependency(Dependency):
         queue.append(node)
         while queue:
             curnode = queue.pop(0)
-            if curnode.op_type == 'Conv2d' or curnode.op_type == 'Linear':
+            if curnode.op_type == 'Conv2d' and  GroupDependency._get_conv_groups(curnode) == 1 \
+                                            or curnode.op_type == 'Linear':
                 # find the first met conv
                 parent_layers.append(curnode.name)
                 continue
+            # FIXME: considering depth-wise conv as BN, i.e. conv.group = weight.shape[0]
+            if curnode.op_type == 'Conv2d' and  GroupDependency._get_conv_groups(curnode) > 1:
+                parent_layers.append(curnode.name)
             parents = self.graph.find_predecessors(curnode.unique_name)
             parents = [self.graph.name_to_node[name] for name in parents]
             for parent in parents:
@@ -282,7 +286,8 @@ class GroupDependency(Dependency):
                 queue.append(parent)
         return parent_layers
 
-    def _get_conv_groups(self, node_group):
+    @classmethod
+    def _get_conv_groups(cls, node_group):
         """
         Get the number of groups for a convolutional layer.
         Parameters
@@ -331,15 +336,16 @@ class GroupDependency(Dependency):
                     self.dependency[node.name] = max(self.dependency[node.name], group)
                 else:
                     self.dependency[node.name] = group
-                if group > 1:
-                    # for the conv layer whose group is larger than 1, it will require the number
-                    # of output channels of their parent conv layer to be divisible by group.
-                    parent_convs = self._get_parent_convs(node)
-                    for parent in parent_convs:
-                        if parent in self.dependency:
-                            self.dependency[parent] = max(self.dependency[parent], group)
-                        else:
-                            self.dependency[parent] = group
+                # import ipdb; ipdb.set_trace()
+                # if group > 1:
+                #     # for the conv layer whose group is larger than 1, it will require the number
+                #     # of output channels of their parent conv layer to be divisible by group.
+                #     parent_convs = self._get_parent_convs(node)
+                #     for parent in parent_convs:
+                #         if parent in self.dependency:
+                #             self.dependency[parent] = max(self.dependency[parent], group)
+                #         else:
+                #             self.dependency[parent] = group
         return self.dependency
 
     def export(self, filepath):

@@ -117,13 +117,18 @@ def replace_conv2d(conv, mask):
         out_channels_index = mask.output_mask.mask_index[1]
         out_channels = out_channels_index.size()[0]
     _logger.debug("replace conv2d with in_channels: %d, out_channels: %d", in_channels, out_channels)
+    
+    ori_groups = conv.groups
+    if conv.groups > 1:
+        assert in_channels == out_channels, f'{in_channels}, {out_channels}'
+        conv.groups = in_channels
     new_conv = torch.nn.Conv2d(in_channels=in_channels,
                                out_channels=out_channels,
                                kernel_size=conv.kernel_size,
                                stride=conv.stride,
                                padding=conv.padding,
                                dilation=conv.dilation,
-                               groups=conv.groups,
+                               groups=conv.groups, #sum(mask.param_masks.get('groups', [conv.groups])),
                                bias=conv.bias is not None,
                                padding_mode=conv.padding_mode)
 
@@ -135,24 +140,30 @@ def replace_conv2d(conv, mask):
             tmp_bias_data = torch.index_select(conv.bias.data, 0, out_channels_index)
     else:
         tmp_weight_data = conv.weight.data
+
+    # TODO: for depth_wise, following operation is not necessary.
     # For the convolutional layers that have more than one group
     # we need to copy the weight group by group, because the input
     # channal is also divided into serveral groups and each group
     # filter may have different input channel indexes.
-    input_step = int(conv.in_channels / conv.groups)
+    input_step = int(conv.in_channels / ori_groups)
     filter_step = int(out_channels / conv.groups)
     # NOTE: does not support group
-    if mask.input_mask is not None:
-        for groupid in range(conv.groups):
+    new_group_id = 0
+    if mask.input_mask is not None and conv.groups == 1:
+        for groupid in range(ori_groups):
             start = groupid * input_step
             end = (groupid + 1) * input_step
             current_input_index = list(filter(lambda x: start <= x and x < end, in_channels_index.tolist()))
+            if len(current_input_index) == 0:
+                continue
             # shift the global index into the group index
             current_input_index = [x-start for x in current_input_index]
             current_input_index = torch.tensor(current_input_index).to(tmp_weight_data.device) # pylint: disable=not-callable
-            f_start = groupid * filter_step
-            f_end = (groupid + 1) * filter_step
-            new_conv.weight.data[f_start:f_end] = torch.index_select(tmp_weight_data[f_start:f_end], 1, current_input_index)
+            f_start = new_group_id * filter_step
+            f_end = (new_group_id + 1) * filter_step
+            new_group_id += 1
+            new_conv.weight.data[f_start:f_end] = torch.index_select(tmp_weight_data[f_start:f_end], 1, current_input_index)    
     else:
         new_conv.weight.data.copy_(tmp_weight_data)
     #     tmp_weight_data = torch.index_select(conv.weight.data if tmp_weight_data is None else tmp_weight_data,

@@ -1,5 +1,6 @@
 import logging
 import os
+import copy
 
 from collections import OrderedDict
 
@@ -97,9 +98,14 @@ class MobileNetStage(nn.Module):
         super().__init__()
         self.blocks = nn.Sequential(    
             MobileNetV3Block(expansion, C, C_out, 2, 3, True, use_se=True),
-            MobileNetV3Block(expansion, C_out, C_out, 1, 3, True, use_se=False),
-            MobileNetV3Block(expansion, C_out, C_out, 1, 3, True, use_se=False),
-            MobileNetV3Block(expansion, C_out, C_out, 1, 3, True, use_se=False)
+            MobileNetV3Block(expansion, C_out, C_out, 1, 3, True, use_se=True),
+            MobileNetV3Block(expansion, C_out, C_out, 1, 3, True, use_se=True),
+            MobileNetV3Block(expansion, C_out, C_out, 1, 3, True, use_se=True),
+            MobileNetV3Block(expansion, C_out, C_out, 1, 3, True, use_se=True),
+            MobileNetV3Block(expansion, C_out, C_out, 2, 3, True, use_se=True),
+            MobileNetV3Block(expansion, C_out, C_out, 1, 3, True, use_se=True),
+            MobileNetV3Block(expansion, C_out, C_out, 1, 3, True, use_se=True),
+            MobileNetV3Block(expansion, C_out, C_out, 1, 3, True, use_se=True),
         )
 
     def forward(self, inputs):
@@ -145,21 +151,21 @@ config_list = [{'sparsity': 0.8, 'op_types': ['Conv2d']}, {'sparsity': 0.5, 'op_
 
 
 def speedup(model, dummy, fixed_mask):
-    apply_compression_results(model, fixed_mask)
     m_speedup = ModelSpeedup(model, dummy, fixed_mask)
     m_speedup.speedup_model()
     return m_speedup.bound_model
 
 def compress(model, dummy, pruner_cls, config_list):
-    pruner = pruner_cls(model, config_list)
+    compressed_model = copy.deepcopy(model)
+    pruner = pruner_cls(compressed_model, config_list)
     compressed_model = pruner.compress()
 
     mask_path = "/tmp/mask.pth"
     pruner.export_model(model_path='/tmp/model.pth', mask_path=mask_path)
     pruner._unwrap_model()
 
-    
-    fixed_mask = fix_mask_conflict(mask_path, model, dummy)
+    print("fixing mask conflict...")
+    fixed_mask = fix_mask_conflict(mask_path, compressed_model, dummy)
     mask = torch.load(mask_path)
 
     mask_c = count_mask(mask)
@@ -167,7 +173,9 @@ def compress(model, dummy, pruner_cls, config_list):
     mask_c = count_mask(fixed_mask)
     print("fixed mask count:", mask_c)
 
-    speedup_model = speedup(model, dummy, fixed_mask)
+    compressed_model.load_state_dict(model.state_dict())
+
+    speedup_model = speedup(compressed_model, dummy, fixed_mask)
     return speedup_model, fixed_mask
 
 def load_state_dict(model, dummy, model_state_dict, fixed_mask, strict=False):
@@ -175,6 +183,12 @@ def load_state_dict(model, dummy, model_state_dict, fixed_mask, strict=False):
     m_speedup.bound_model.load_state_dict(model_state_dict)
     return m_speedup
 
+def save_state_dict(m_speedup, fixed_mask, model_path, mask_path):
+    torch.save(m_speedup, model_path)
+    torch.save(fixed_mask, mask_path)
+
 m_speedup, masks = compress(model, dummy, L1FilterPruner, config_list)
+
+import ipdb; ipdb.set_trace()
 params = count_state_dict(m_speedup.state_dict())
 print("new param count:", params)

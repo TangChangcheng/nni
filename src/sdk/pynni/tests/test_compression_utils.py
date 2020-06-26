@@ -112,7 +112,6 @@ class AnalysisUtilsTest(TestCase):
             pruner._unwrap_model()
             # Fix the mask conflict
             fixed_mask = fix_mask_conflict(mask_file, net, dummy_input)
-            mf.export(os.path.join(outdir, '%s_fixed_mask' % name))
             # use the channel dependency groud truth to check if
             # fix the mask conflict successfully
             for dset in channel_dependency_ground_truth[name]:

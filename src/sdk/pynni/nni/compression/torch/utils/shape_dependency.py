@@ -93,6 +93,9 @@ class ChannelDependency(Dependency):
             # or aten::cat operations
             if node.op_type in ADD_TYPES:
                 parent_layers = self._get_parent_layers(node)
+            elif node.op_type == 'Conv2d':
+                if GroupDependency._get_conv_groups(node) > 1:
+                    parent_layers = self._get_parent_layers(node)
             elif node.op_type == CAT_TYPE:
                 # To determine if this cat operation will introduce channel
                 # dependency, we need the specific input parameters of the cat

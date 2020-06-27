@@ -46,7 +46,7 @@ def replace_linear(linear, mask):
     assert isinstance(mask, ModuleMasks)
     assert mask.input_mask is not None
     assert mask.output_mask is None
-    assert not mask.param_masks
+    assert 'weight' not in mask.param_masks, mask.param_masks
     index = mask.input_mask.mask_index[-1]
     in_features = index.size()[0]
     _logger.debug("replace linear with new in_features: %d", in_features)

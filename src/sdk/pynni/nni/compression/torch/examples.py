@@ -111,10 +111,6 @@ class MobileNetStage(nn.Module):
     def forward(self, inputs):
         return self.blocks(inputs)
 
-
-model = MobileNetStage(16, 24, 6)
-dummy = torch.rand(2, 16, 28, 28)
-
 import numpy as np
 def count_mask(masks):
     res = 0
@@ -143,11 +139,13 @@ def init_weight(m):
 
 from .pruning.one_shot import L1FilterPruner, SlimPruner
 
+model = MobileNetStage(16, 24, 6)
+dummy = torch.rand(2, 16, 28, 28)
 params = count_state_dict(model.state_dict())
 print("param count:", params)
 
 model.apply(init_weight)
-config_list = [{'sparsity': 0.8, 'op_types': ['Conv2d']}, {'sparsity': 0.5, 'op_types': ['Conv2d'], 'op_names': ['blocks.0.inv_bottleneck.0']}]
+config_list = [{'sparsity': 0.8, 'op_types': ['Conv2d']}, {'sparsity': 0.5, 'op_types': ['Conv2d'], 'op_names': ['blocks.0.inv_bottleneck.0']}, {'exclude': True, 'op_names': ['backbone.classifier']}]
 
 
 def speedup(model, dummy, fixed_mask):
@@ -174,9 +172,11 @@ def compress(model, dummy, pruner_cls, config_list):
     print("fixed mask count:", mask_c)
 
     compressed_model.load_state_dict(model.state_dict())
+    apply_compression_results(compressed_model, fixed_mask)
 
     speedup_model = speedup(compressed_model, dummy, fixed_mask)
     return speedup_model, fixed_mask
+    # return compressed_model, fixed_mask
 
 def load_state_dict(model, dummy, model_state_dict, fixed_mask, strict=False):
     m_speedup = speedup(model, dummy, fixed_mask)
@@ -187,8 +187,7 @@ def save_state_dict(m_speedup, fixed_mask, model_path, mask_path):
     torch.save(m_speedup, model_path)
     torch.save(fixed_mask, mask_path)
 
-m_speedup, masks = compress(model, dummy, L1FilterPruner, config_list)
+# m_speedup, masks = compress(model, dummy, L1FilterPruner, config_list)
 
-import ipdb; ipdb.set_trace()
-params = count_state_dict(m_speedup.state_dict())
-print("new param count:", params)
+# params = count_state_dict(m_speedup.state_dict())
+# print("new param count:", params)

@@ -52,6 +52,7 @@ def fix_mask_conflict(masks, model=None, dummy_input=None, traced=None):
 
     channel_depen = ChannelDependency(model,dummy_input, traced)
     sets = channel_depen.dependency_sets 
+    print("*******", sets)
     for dep in sets:
         sub_masks = [(d, masks[d]["weight"].sum(-1).sum(-1).sum(-1).to(torch.bool)) for d in dep]
         _, mask_0 = sub_masks[0]

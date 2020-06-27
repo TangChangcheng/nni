@@ -92,7 +92,7 @@ class CoarseMask:
             elif cmask.mask_index[i] is not None:
                 self.mask_index[i] = CoarseMask.merge_index(self.mask_index[i],
                                                             cmask.mask_index[i])
-        return self.mask_index
+        return self
 
     def __repr__(self):
         return 'mask_index: {}'.format(self.mask_index)
@@ -244,7 +244,9 @@ infer_from_inshape = {
 Infer input and weight shape of a module/function from its output shape
 """
 infer_from_outshape = {
-    'Conv2d': lambda module_masks, mask: conv2d_outshape(module_masks, mask)
+    'Conv2d': lambda module_masks, mask: conv2d_outshape(module_masks, mask),
+    'ReLU': lambda module_masks, mask: relu_outshape(module_masks, mask),
+
 }
 
 def dropout_inshape(module_masks, mask):
@@ -636,6 +638,7 @@ def conv2d_mask(module_masks, mask):
                 bias_cmask.add_index_mask(dim=0, index=bias_index)
             return index, weight_cmask, bias_cmask
     index, weight_cmask, bias_cmask = convert_to_coarse_mask(mask)
+    group = mask['group']
     if index is None:
         # TODO: fine grained mask speedup
         return None, None
@@ -643,16 +646,31 @@ def conv2d_mask(module_masks, mask):
     if 'weight' in module_masks.param_masks:
         module_masks.param_masks['weight'].merge(weight_cmask)
         module_masks.param_masks['bias'].merge(bias_cmask)
+        for i, g in enumerate(group):
+            if g == 1:
+                module_masks.param_masks['group'][i] = 1
     else:
         module_masks.set_param_masks('weight', weight_cmask)
         module_masks.set_param_masks('bias', bias_cmask)
+        module_masks.set_param_masks('group', group)
     output_cmask = CoarseMask(num_dim=4)
     output_cmask.add_index_mask(dim=1, index=index)
     if module_masks.output_mask is None:
         module_masks.set_output_mask(output_cmask)
     else:
         module_masks.output_mask.merge(output_cmask)
-    return None, module_masks.output_mask
+    
+    if len(group) > 1:
+        if module_masks.input_mask is None:
+            module_masks.set_input_mask(output_cmask)
+        else:
+            module_masks.input_mask.merge(output_cmask)
+    # group conv
+    # the input mask of depthwise conv should be consistent with the output mask
+    input_mask = None
+    if len(group) == mask['weight'].shape[0]:
+        input_mask = module_masks.output_mask
+    return input_mask, module_masks.output_mask
 
 
 def conv2d_inshape(module_masks, mask):
@@ -675,9 +693,39 @@ def conv2d_inshape(module_masks, mask):
     else:
         # the same conv layer may be accessed more
         # than once, such as a concat operation.
-        assert module_masks.input_mask <= mask
+        try:
+            assert module_masks.input_mask <= mask
+        except:
+            import ipdb; ipdb.set_trace()
+        
         module_masks.input_mask.merge(mask)
-    return None
+    group = module_masks.param_masks.get('group', [1])
+    out_tensor = None
+    if len(group) > 1:
+        if module_masks.output_mask is None:
+            module_masks.set_output_mask(mask)
+        else:
+            # the same conv layer may be accessed more
+            # than once, such as a concat operation.
+            assert module_masks.output_mask <= mask
+            module_masks.output_mask.merge(mask)
+
+        if 'weight' in module_masks.param_masks:
+            module_masks.param_masks['weight'].merge(mask)
+            if module_masks.param_masks.get('bias'):
+                module_masks.param_masks['bias'].merge(mask)
+        else:
+            module_masks.set_param_masks('weight', mask)
+            module_masks.set_param_masks('bias', mask)
+
+        group = torch.zeros(len(group))
+        for i in mask.mask_index[1]:
+            group[i] = 1
+
+        out_tensor = module_masks.output_mask
+    module_masks.set_param_masks('group', group)
+    return out_tensor
+
 
 
 def conv2d_outshape(module_masks, mask):
@@ -713,5 +761,29 @@ def conv2d_outshape(module_masks, mask):
     bias_cmask.add_index_mask(dim=0, index=mask.mask_index[1])
     module_masks.set_param_masks('weight', weight_cmask)
     module_masks.set_param_masks('bias', bias_cmask)
+    group = module_masks.param_masks.get('group', [1])
+
+    input_tensor = None
+    if len(group) > 1:
+        group = torch.zeros(len(group))
+        for i in module_masks.output_mask.mask_index[1]:
+            group[i] = 1
+        input_tensor = module_masks.output_mask
+        module_masks.input_mask = mask
+    module_masks.set_param_masks('group', group)
     # input shape is not changed
-    return None
+    return input_tensor
+
+
+def relu_outshape(module_masks, mask):
+    if module_masks.output_mask is None:
+        module_masks.set_output_mask(mask)
+        module_masks.set_input_mask(mask)
+        return module_masks.input_mask
+    # if alreay visited
+    assert module_masks.input_mask <= mask
+    if module_masks.input_mask == mask:
+        return None
+    module_masks.set_input_mask(mask)
+    module_masks.set_output_mask(mask)
+    return module_masks.input_mask

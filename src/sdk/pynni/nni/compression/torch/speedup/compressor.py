@@ -85,12 +85,9 @@ class ModelSpeedup:
         out_shape : ModuleMasks
             Output shape of this node
         """
-        import ipdb; ipdb.set_trace()
         if  module_name in self.bfs_visited:
             print('--' * 10, module_name)
             return
-        # if 'point_linear' in module_name:
-        #     import ipdb; ipdb.set_trace()
         print("**" * 10, module_name)
         self.bfs_visited.add(module_name)
         input_cmask = output_cmask = None
@@ -126,25 +123,26 @@ class ModelSpeedup:
                     "Has not supported infering output shape from input shape for module/function: `{}`, {}"
                     .format(m_type, module_name))
             if m_type in ['aten::view', 'aten::flatten', 'aten::mean']:
-                output_cmask = infer_from_inshape[m_type](module_masks,
+                _output_cmask = infer_from_inshape[m_type](module_masks,
                                                           in_shape,
                                                           self.torch_graph.name_to_node[module_name].auxiliary)
             elif m_type in ['aten::cat']:
                 # To calculate the mask for concat operation, the output shape
                 # , cat dimension, and the order of the input parameters.
-                output_cmask = infer_from_inshape[m_type](module_masks,
+                _output_cmask = infer_from_inshape[m_type](module_masks,
                                                         in_shape,
                                                         self.torch_graph.name_to_node[module_name].auxiliary,
                                                         last_module)
             else:
-                output_cmask = infer_from_inshape[m_type](module_masks, in_shape)
+                _output_cmask = infer_from_inshape[m_type](module_masks, in_shape)
+        output_cmask = output_cmask or _output_cmask
         if out_shape is not None:
             _logger.debug("out_shape is not None")
             if not m_type in infer_from_outshape:
                 raise RuntimeError(
                     "Has not supported infering input shape from output shape for module/function: `{}`, {}"
                     .format(m_type, module_name))
-            input_cmask = infer_from_outshape[m_type](module_masks, out_shape)
+            input_cmask = infer_from_outshape[m_type](module_masks, out_shape) or input_cmask
 
         if input_cmask:
             predecessors = self.torch_graph.find_predecessors(module_name)

@@ -19,7 +19,8 @@ replace_module = {
     'Linear': lambda module, mask: replace_linear(module, mask),
     'Dropout': lambda module, mask: no_replace(module, mask),
     'Dropout2d': lambda module, mask: no_replace(module, mask),
-    'Dropout3d': lambda module, mask: no_replace(module, mask)
+    'Dropout3d': lambda module, mask: no_replace(module, mask),
+    'Upsample': lambda module, mask: no_replace(module, mask),
 }
 
 def no_replace(module, mask):
@@ -163,7 +164,11 @@ def replace_conv2d(conv, mask):
             f_start = new_group_id * filter_step
             f_end = (new_group_id + 1) * filter_step
             new_group_id += 1
-            new_conv.weight.data[f_start:f_end] = torch.index_select(tmp_weight_data[f_start:f_end], 1, current_input_index)    
+            try:
+                new_conv.weight.data[f_start:f_end] = torch.index_select(tmp_weight_data[f_start:f_end], 1, current_input_index)
+            except:
+                import ipdb; ipdb.set_trace()
+            
     else:
         new_conv.weight.data.copy_(tmp_weight_data)
     #     tmp_weight_data = torch.index_select(conv.weight.data if tmp_weight_data is None else tmp_weight_data,

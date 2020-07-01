@@ -49,7 +49,8 @@ class OneshotPruner(Pruner):
         schema = CompressorSchema([{
             'sparsity': And(float, lambda n: 0 < n < 1),
             Optional('op_types'): [str],
-            Optional('op_names'): [str]
+            Optional('op_names'): [str],
+            Optional('exclude'): [bool]
         }], model, logger)
 
         schema.validate(config_list)
@@ -112,7 +113,8 @@ class _StructuredFilterPruner(OneshotPruner):
         schema = CompressorSchema([{
             'sparsity': And(float, lambda n: 0 < n < 1),
             'op_types': ['Conv2d'],
-            Optional('op_names'): [str]
+            Optional('op_names'): [str],
+            Optional('exclude'): bool
         }], model, logger)
 
         schema.validate(config_list)

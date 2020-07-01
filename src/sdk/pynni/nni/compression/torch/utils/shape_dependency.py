@@ -9,7 +9,7 @@ from nni._graph_utils import TorchModuleGraph
 __all__ = ['ChannelDependency', 'GroupDependency', 'CatPaddingDependency']
 
 CONV_TYPE = 'aten::_convolution'
-ADD_TYPES = ['aten::add', 'aten::add_', 'aten::mul', 'aten::mul_']
+ADD_TYPES = ['aten::add', 'aten::add_', 'aten::mul', 'aten::mul_', 'aten::stack']
 CAT_TYPE = 'aten::cat'
 logger = logging.getLogger('Shape_Dependency')
 

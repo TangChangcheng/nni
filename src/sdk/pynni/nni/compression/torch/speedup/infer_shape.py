@@ -7,7 +7,7 @@ The other is given input shape, infer its output shape and initialization parame
 """
 
 import torch
-
+import numpy as np
 
 class CoarseMask:
     """
@@ -237,7 +237,13 @@ infer_from_inshape = {
     'aten::mul_': lambda module_mask, mask: mul_inshape(module_mask, mask),
     'aten::cat': lambda module_mask, mask, cat_info, last_visited: cat_inshape(module_mask, mask, cat_info, last_visited),
     'aten::mean': lambda module_masks, mask, shape: mean_inshape(module_masks, mask, shape),
-    'Dropout': lambda module_masks, mask: dropout_inshape(module_masks, mask)
+    'Dropout': lambda module_masks, mask: dropout_inshape(module_masks, mask),
+    'Upsample': lambda module_masks, mask: dropout_inshape(module_masks, mask),
+    'aten::constant_pad_nd': lambda module_masks, mask: relu_inshape(module_masks, mask),
+    'aten::permute': lambda module_masks, mask, order: permute_inshape(module_masks, mask, order),
+    'aten::contiguous': lambda module_masks, mask: relu_inshape(module_masks, mask),
+    'aten::index_put_': lambda module_masks, mask: relu_inshape(module_masks, mask),
+    'aten::stack': lambda module_masks, mask, stack_info: stack_inshape(module_masks, mask, stack_info),
 }
 
 """
@@ -261,6 +267,16 @@ def dropout_inshape(module_masks, mask):
     module_masks.set_input_mask(mask)
     module_masks.set_output_mask(mask)
     return module_masks.output_mask
+
+# def stack_inshape(module_masks, mask, stack_info):
+#     assert isinstance(mask, CoarseMask)
+#     out_shape = stack_info['out_shape']
+#     dim = stack_info['cat_dim']
+#     in_order = stack_info['in_order'] # useless
+#     in_shape = stack_info['in_shape']
+
+#     output_mask = CoarseMask(num_dim=len(out_shape))
+#     import ipdb; ipdb.set_trace()
 
 
 
@@ -290,6 +306,7 @@ def cat_inshape(module_masks, mask, cat_info, last_visited):
     cat_dim = cat_info['cat_dim']
     in_order = cat_info['in_order']
     in_shape = cat_info['in_shape']
+    import ipdb; ipdb.set_trace()
     if module_masks.output_mask is None:
         # First visit to this cat node
         # initialize the mask based on
@@ -445,28 +462,59 @@ def view_inshape(module_masks, mask, shape):
         The mask of its output tensor
     """
     # NOTE: the case constrained by the following four asserts
-    assert shape['in_shape'][0] == shape['out_shape'][0]
-    assert len(shape['in_shape']) == 4
-    assert len(shape['out_shape']) == 2
-    assert shape['out_shape'][1] == shape['in_shape'][1] * \
-        shape['in_shape'][2]*shape['in_shape'][3]
+
+    index_mask_shape = [m is None for m in mask.mask_index]
+    assert sum(index_mask_shape) == len(index_mask_shape) - 1, "Only single dimensional mask is supported"
+    index_mask_shape = index_mask_shape.index(False)
+
+    def calc_prod(shape, index):
+        pre = np.prod([1] + list(shape[:index]))
+        suf = np.prod(list(shape[index:]) + [1])
+        return pre, suf
+
+    pre, suf = calc_prod(shape['in_shape'], index_mask_shape)
+
+    for i in range(len(shape['out_shape'])):
+        o_pre, o_suf = calc_prod(shape['out_shape'], i)
+        if shape['out_shape'][i] == shape['in_shape'][index_mask_shape] and pre == o_pre and suf == o_suf:
+            break
+    else:
+        # TODO: flatten operation is not supported yet. or we can support flatten respectively.
+        raise ValueError(f"Pruned dimension should not be reshaped, got {shape['in_shape']} and {shape['out_shape']}")
+
+    # assert shape['in_shape'][0] == shape['out_shape'][0]
+    # assert len(shape['in_shape']) == 4
+    # assert len(shape['out_shape']) == 2
+    # assert shape['out_shape'][1] == shape['in_shape'][1] * \
+    #     shape['in_shape'][2]*shape['in_shape'][3]
 
     assert isinstance(mask, CoarseMask)
-    assert mask.mask_index[1] is not None
-    assert mask.mask_index[0] is None
-    assert mask.mask_index[2] is None
-    assert mask.mask_index[3] is None
+    # assert mask.mask_index[1] is not None
+    # assert mask.mask_index[0] is None
+    # assert mask.mask_index[2] is None
+    # assert mask.mask_index[3] is None
     assert module_masks.input_mask is None
     module_masks.set_input_mask(mask)
-    output_cmask = CoarseMask(num_dim=2)
-    index = []
-    step_size = shape['in_shape'][2] * shape['in_shape'][3]
-    for loc in mask.mask_index[1]:
-        index.extend([loc * step_size + i for i in range(step_size)])
-    output_cmask.add_index_mask(dim=1, index=torch.tensor(index))  # pylint: disable=not-callable
+
+    # Following code supports flatten operation.
+    # output_cmask = CoarseMask(num_dim=2)
+    # index = []
+    # step_size = shape['in_shape'][2] * shape['in_shape'][3]
+    # for loc in mask.mask_index[1]:
+    #     index.extend([loc * step_size + i for i in range(step_size)])
+    # output_cmask.add_index_mask(dim=1, index=torch.tensor(index))  # pylint: disable=not-callable
+
+    output_cmask = CoarseMask(num_dim=len(shape['out_shape']))
+    output_cmask.add_index_mask(dim=i, index=torch.tensor(mask.mask_index[index_mask_shape]))
     module_masks.set_output_mask(output_cmask)
     return output_cmask
 
+def permute_inshape(module_masks, mask, order):
+    output_cmask = CoarseMask(num_dim=len(mask.mask_index))
+    for i, o in enumerate(order['order']):
+        output_cmask.add_index_mask(dim=i, index=mask.mask_index[o])
+    module_masks.set_output_mask(output_cmask)
+    return output_cmask
 
 def size_inshape(module_masks, mask):
     """
@@ -529,6 +577,31 @@ def relu_inshape(module_masks, mask):
     ----------
     module_masks : ModuleMasks
         The ModuleMasks instance of the relu
+    mask : CoarseMask
+        The mask of its input tensor
+    Returns
+    -------
+    CoarseMask
+        The mask of its output tensor
+    """
+    assert isinstance(mask, CoarseMask)
+    # TODO: double check this assert, is it possible that a module is passed twice
+    if module_masks.input_mask is not None:
+        # check if has a mask conflict
+        assert module_masks.input_mask == mask
+        # No need to pass the mask again
+        return None
+    # assert module_masks.input_mask is None, "A relu op can only be processed once"
+    module_masks.set_input_mask(mask)
+    module_masks.set_output_mask(mask)
+    return mask
+
+def stack_inshape(module_masks, mask, dim):
+    """
+    Parameters
+    ----------
+    module_masks : ModuleMasks
+        The ModuleMasks instance of the stack
     mask : CoarseMask
         The mask of its input tensor
     Returns
@@ -693,10 +766,7 @@ def conv2d_inshape(module_masks, mask):
     else:
         # the same conv layer may be accessed more
         # than once, such as a concat operation.
-        try:
-            assert module_masks.input_mask <= mask
-        except:
-            import ipdb; ipdb.set_trace()
+        assert module_masks.input_mask <= mask
         
         module_masks.input_mask.merge(mask)
     group = module_masks.param_masks.get('group', [1])

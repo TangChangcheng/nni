@@ -136,24 +136,12 @@ def init_weight(m):
         nn.init.constant_(m.bias, 1)
         
 
-
-from .pruning.one_shot import L1FilterPruner, SlimPruner
-
-model = MobileNetStage(16, 24, 6)
-dummy = torch.rand(2, 16, 28, 28)
-params = count_state_dict(model.state_dict())
-print("param count:", params)
-
-model.apply(init_weight)
-config_list = [{'sparsity': 0.8, 'op_types': ['Conv2d']}, {'sparsity': 0.5, 'op_types': ['Conv2d'], 'op_names': ['blocks.0.inv_bottleneck.0']}, {'exclude': True, 'op_names': ['backbone.classifier']}]
-
-
-def speedup(model, dummy, fixed_mask):
-    m_speedup = ModelSpeedup(model, dummy, fixed_mask)
+def speedup(model, dummy, fixed_mask, trace=None):
+    m_speedup = ModelSpeedup(model, dummy, fixed_mask, trace)
     m_speedup.speedup_model()
     return m_speedup.bound_model
 
-def compress(model, dummy, pruner_cls, config_list):
+def compress(model, dummy, pruner_cls, config_list, trace=None):
     compressed_model = copy.deepcopy(model)
     pruner = pruner_cls(compressed_model, config_list)
     compressed_model = pruner.compress()
@@ -163,7 +151,8 @@ def compress(model, dummy, pruner_cls, config_list):
     pruner._unwrap_model()
 
     print("fixing mask conflict...")
-    fixed_mask = fix_mask_conflict(mask_path, compressed_model, dummy)
+
+    fixed_mask = fix_mask_conflict(mask_path, compressed_model, dummy, trace)
     mask = torch.load(mask_path)
 
     mask_c = count_mask(mask)
@@ -174,7 +163,7 @@ def compress(model, dummy, pruner_cls, config_list):
     compressed_model.load_state_dict(model.state_dict())
     apply_compression_results(compressed_model, fixed_mask)
 
-    speedup_model = speedup(compressed_model, dummy, fixed_mask)
+    speedup_model = speedup(compressed_model, dummy, fixed_mask, trace)
     return speedup_model, fixed_mask
     # return compressed_model, fixed_mask
 
@@ -186,6 +175,17 @@ def load_state_dict(model, dummy, model_state_dict, fixed_mask, strict=False):
 def save_state_dict(m_speedup, fixed_mask, model_path, mask_path):
     torch.save(m_speedup, model_path)
     torch.save(fixed_mask, mask_path)
+
+
+from .pruning.one_shot import L1FilterPruner, SlimPruner
+
+# model = MobileNetStage(16, 24, 6)
+# dummy = torch.rand(2, 16, 28, 28)
+# params = count_state_dict(model.state_dict())
+# print("param count:", params)
+
+# model.apply(init_weight)
+# config_list = [{'sparsity': 0.8, 'op_types': ['Conv2d']}, {'sparsity': 0.5, 'op_types': ['Conv2d'], 'op_names': ['blocks.0.inv_bottleneck.0']}, {'exclude': True, 'op_names': ['backbone.classifier']}]
 
 # m_speedup, masks = compress(model, dummy, L1FilterPruner, config_list)
 

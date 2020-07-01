@@ -11,12 +11,14 @@ from torch.utils.tensorboard._pytorch_graph import NodePy, NodePyIO, NodePyOP, G
 CLASSTYPE_KIND = 'ClassType'
 GETATTR_KIND = 'prim::GetAttr'
 CAT_KIND = 'aten::cat'
+PERMUTE_KIND = 'aten::permute'
+STACK_KIND = 'aten::stack'
 
 _logger = logging.getLogger(__name__)
 
 
-def build_module_graph(model, dummy_input):
-    return TorchModuleGraph(model, dummy_input)
+def build_module_graph(model, dummy_input, trace=None):
+    return TorchModuleGraph(model, dummy_input, trace)
 
 
 def build_graph(model, dummy_input, verbose=False):
@@ -410,6 +412,49 @@ class TorchModuleGraph(TorchGraph):
         cat_info['in_shape'] = input_shapes
         return cat_info
 
+    def _extract_stack_info(self, node_group, cpp_node):
+        """
+        Extract the detail information of the cat operation,
+        such the order of the input tensor, the shape of each
+        input tensor, the output shape, and the cat dimension.
+
+        Parameters
+        ----------
+        node_group : NodePyGroup
+        cpp_node: torch._C.Node
+            It should be ```aten::cat``` node
+
+        Returns
+        -------
+        dict
+            Include auxiliary information for the cat operation.
+        """
+        # only suport the cat operation
+        cat_info = {}
+        # get the shape of the output tensor
+        t_output = cpp_node.output()
+        out_shape = t_output.type().sizes()
+        cat_info['out_shape'] = out_shape
+        # get the cat dimension
+        inputs = cpp_node.inputs()
+        cat_dim = list(inputs)[1].toIValue()
+        cat_info['cat_dim'] = cat_dim
+        # get the order of the input tensors
+        # To get the order of the input tensors, we need
+        # to be aware of the topology of the model, which
+        # means we should extract the auxiliary information
+        # after the build_index function.
+        input_order = []
+        list_construct_cpp = list(cpp_node.inputs())[0].node()
+        input_tensors = list(list_construct_cpp.inputs())
+        for _tensor in input_tensors:
+            debug_name = _tensor.debugName()
+            input_order.append(self.output_to_node[debug_name].unique_name)
+        cat_info['in_order'] = input_order
+        input_shapes = [t.type().sizes() for t in input_tensors]
+        cat_info['in_shape'] = input_shapes
+        return cat_info
+
     def _extract_shape_info(self, node):
         """
         Extract the shape information of ```aten::view``` node
@@ -434,6 +479,36 @@ class TorchModuleGraph(TorchGraph):
         in_shape = t_input.type().sizes()
         out_shape = t_output.type().sizes()
         return {'in_shape': in_shape, 'out_shape': out_shape}
+
+    def _extract_permute_info(self, node):
+        """
+        Extract the shape information of ```aten::permute``` node
+
+        Parameters
+        ----------
+        node : trace graph node
+            It should be ```aten::permute``` node
+
+        Returns
+        -------
+        dict
+            Include shape of input tensor and shape of output tensor
+        """
+        t_input = None
+        for _input in node.inputs():
+            t_input = _input
+            break
+        t_output = node.output()
+        assert isinstance(t_input.type(), torch._C.TensorType)
+        assert isinstance(t_output.type(), torch._C.TensorType)
+        in_shape = t_input.type().sizes()
+        out_shape = t_output.type().sizes()
+
+        order = []
+        for i in in_shape:
+            order += [out_shape.index(i)]
+        assert len(set(order)) == len(order)
+        return {'order': order}
 
     def _extract_leaf_modules(self):
         """
@@ -616,6 +691,16 @@ class TorchModuleGraph(TorchGraph):
                 cpp_node = list(filter(lambda x: x.kind() == node_group.op_type,
                                     node_group.node_cpps))[0]
                 node_group.auxiliary = self._extract_cat_info(
+                    node_group, cpp_node)
+            elif node_group.op_type == PERMUTE_KIND:
+                cpp_node = list(filter(lambda x: x.kind() == node_group.op_type,
+                                    node_group.node_cpps))[0]
+                node_group.auxiliary = self._extract_permute_info(
+                    cpp_node)
+            elif node_group.op_type == STACK_KIND:
+                cpp_node = list(filter(lambda x: x.kind() == node_group.op_type,
+                                    node_group.node_cpps))[0]
+                node_group.auxiliary = self._extract_stack_info(
                     node_group, cpp_node)
 
     def find_predecessors(self, unique_name):

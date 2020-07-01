@@ -38,7 +38,7 @@ class ModelSpeedup:
     This class is to speedup the model with provided weight mask
     """
 
-    def __init__(self, model, dummy_input, masks_file, map_location=None):
+    def __init__(self, model, dummy_input, masks_file, trace=None, map_location=None):
         """
         Parameters
         ----------
@@ -58,7 +58,8 @@ class ModelSpeedup:
             self.masks = masks_file
         self.inferred_masks = dict() # key: module_name, value: ModuleMasks
         self.dummy_input = dummy_input
-        self.torch_graph = build_module_graph(model, dummy_input)
+        self.trace = trace
+        self.torch_graph = build_module_graph(model, dummy_input, trace)
 
         self.bfs_visited = set()
 
@@ -85,11 +86,7 @@ class ModelSpeedup:
         out_shape : ModuleMasks
             Output shape of this node
         """
-        if  module_name in self.bfs_visited:
-            print('--' * 10, module_name)
-            return
         print("**" * 10, module_name)
-        self.bfs_visited.add(module_name)
         input_cmask = output_cmask = None
         if module_name in self.inferred_masks:
             module_masks = self.inferred_masks[module_name]
@@ -98,6 +95,10 @@ class ModelSpeedup:
             self.inferred_masks[module_name] = module_masks
 
         m_type = self.torch_graph.name_to_node[module_name].op_type
+        if module_name in self.bfs_visited and m_type != 'aten::cat':
+            print('--' * 10, 'visited: ', module_name)
+            return
+        self.bfs_visited.add(module_name)
         _logger.debug("infer mask of module %s with op_type %s", module_name, m_type)
 
         group = [1]
@@ -122,7 +123,7 @@ class ModelSpeedup:
                 raise RuntimeError(
                     "Has not supported infering output shape from input shape for module/function: `{}`, {}"
                     .format(m_type, module_name))
-            if m_type in ['aten::view', 'aten::flatten', 'aten::mean']:
+            if m_type in ['aten::view', 'aten::flatten', 'aten::mean', 'aten::permute', 'aten::stack']:
                 _output_cmask = infer_from_inshape[m_type](module_masks,
                                                           in_shape,
                                                           self.torch_graph.name_to_node[module_name].auxiliary)
@@ -217,7 +218,7 @@ class ModelSpeedup:
         training = self.bound_model.training
         _logger.info("start to speed up the model")
         _logger.info("fix the mask conflict of the interdependent layers")
-        fix_mask_conflict(self.masks, self.bound_model, self.dummy_input)
+        fix_mask_conflict(self.masks, self.bound_model, self.dummy_input, self.trace)
         _logger.info("infer module masks...")
         self.infer_modules_masks()
         _logger.info("replace compressed modules...")

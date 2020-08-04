@@ -141,6 +141,26 @@ def speedup(model, dummy, fixed_mask, trace=None):
     m_speedup.speedup_model()
     return m_speedup.bound_model
 
+
+def count_zero(model, less=False):
+    all_count = 0
+    all_total = 0
+    for name, param in model.named_parameters():
+        count = torch.sum((param == 0).int()).data
+        all_count += count
+        all_total += param.numel()
+        if not less:
+            print(
+                "{}: shape {}, zeros {}, total {}, ratio {:.3f}".format(name, list(param.shape), count, param.numel(),
+                                                                        float(count) / param.numel()))
+
+    print(
+        "[Count Zero] total number of zeros: {}, total number of param values: {}, overall ratio: {:.6f}".format(
+            all_count,
+            all_total,
+            float(all_count) / all_total))
+
+
 def compress(model, dummy, pruner_cls, config_list, trace=None):
     compressed_model = copy.deepcopy(model)
     pruner = pruner_cls(compressed_model, config_list)

@@ -84,7 +84,7 @@ class SensitivityAnalysis:
             self.Pruner = LevelPruner
         self.early_stop_mode = early_stop_mode
         self.early_stop_value = early_stop_value
-        self.ori_metric = None  # original validation metric for the model
+        self.ori_metric = None #0.832088489 #original validation metric for the model
         # already_pruned is for the iterative sensitivity analysis
         # For example, sensitivity_pruner iteratively prune the target
         # model according to the sensitivity. After each round of
@@ -180,8 +180,7 @@ class SensitivityAnalysis:
             self.sensitivities[name] = {}
             for sparsity in self.sparsities:
                 # Calculate the actual prune ratio based on the already pruned ratio
-                sparsity = (
-                    1.0 - self.already_pruned[name]) * sparsity + self.already_pruned[name]
+                sparsity = (1.0 - self.already_pruned[name]) * sparsity + self.already_pruned[name]
                 # TODO In current L1/L2 Filter Pruner, the 'op_types' is still necessary
                 # I think the L1/L2 Pruner should specify the op_types automaticlly
                 # according to the op_names
@@ -207,6 +206,7 @@ class SensitivityAnalysis:
             self.model.load_state_dict(self.ori_state_dict)
 
         return self.sensitivities
+
 
     def export(self, filepath):
         """

@@ -113,14 +113,15 @@ class CatMaskPadding(MaskFix):
                 continue
             # pad the mask for the non-pruned layers
             for layer in layers:
-                module = name_to_module[layer]
-                w_shape = module.weight.data.size()
-                w_mask = torch.ones(w_shape).to(device)
-                b_mask = None
-                if hasattr(module, 'bias'):
-                    b_shape = module.bias.data.size()
-                    b_mask = torch.ones(b_shape).to(device)
-                self.masks[layer] = {'weight':w_mask, 'bias':b_mask}
+                if layer not in self.masks:
+                    module = name_to_module[layer]
+                    w_shape = module.weight.data.size()
+                    w_mask = torch.ones(w_shape).to(device)
+                    b_mask = None
+                    if hasattr(module, 'bias') and module.bias is not None:
+                        b_shape = module.bias.data.size()
+                        b_mask = torch.ones(b_shape).to(device)
+                    self.masks[layer] = {'weight':w_mask, 'bias':b_mask}
         return self.masks
 
 

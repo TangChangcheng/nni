@@ -306,7 +306,6 @@ def cat_inshape(module_masks, mask, cat_info, last_visited):
     cat_dim = cat_info['cat_dim']
     in_order = cat_info['in_order']
     in_shape = cat_info['in_shape']
-    import ipdb; ipdb.set_trace()
     if module_masks.output_mask is None:
         # First visit to this cat node
         # initialize the mask based on

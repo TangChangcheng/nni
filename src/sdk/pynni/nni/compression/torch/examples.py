@@ -112,12 +112,6 @@ class MobileNetStage(nn.Module):
         return self.blocks(inputs)
 
 import numpy as np
-def count_mask(masks):
-    res = 0
-    for k, m in masks.items():
-        res += m["weight"].sum()
-    return res 
-
 def count_state_dict(state_dict):
     res = 0
     for k, v in state_dict.items():
@@ -142,18 +136,17 @@ def speedup(model, dummy, fixed_mask, trace=None):
     return m_speedup.bound_model
 
 
-def count_zero(model, less=False):
+def count_zero(model, verbose=False):
     all_count = 0
     all_total = 0
     for name, param in model.named_parameters():
         count = torch.sum((param == 0).int()).data
         all_count += count
         all_total += param.numel()
-        if not less:
+        if verbose:
             print(
                 "{}: shape {}, zeros {}, total {}, ratio {:.3f}".format(name, list(param.shape), count, param.numel(),
                                                                         float(count) / param.numel()))
-
     print(
         "[Count Zero] total number of zeros: {}, total number of param values: {}, overall ratio: {:.6f}".format(
             all_count,
@@ -161,7 +154,23 @@ def count_zero(model, less=False):
             float(all_count) / all_total))
 
 
-def compress(model, dummy, pruner_cls, config_list, trace=None):
+def update_sparsity_by_sensitivity(config_list, ori_metric, metric_thres, sensitivity):
+    layer_sparsity = 0.0
+    for layername in sensitivity:
+        for sparsity in sorted(sensitivity[layername].keys()):
+            if ori_metric - sensitivity[layername][sparsity] >  metric_thres:
+                new_cfg = {'sparsity': layer_sparsity, 'op_types': ['Conv2d'], 'op_names': [layername]}
+                config_list.insert(0, new_cfg)
+                break
+            else:
+                layer_sparsity = sparsity
+    return config_list
+
+
+def compress(model, dummy, pruner_cls, config_list, ori_metric=1.00, metric_thres=0.01, sensitivity=None, trace=None,
+             verbose=True):
+    if sensitivity:
+        config_list = update_sparsity_by_sensitivity(config_list, ori_metric, metric_thres, sensitivity)
     compressed_model = copy.deepcopy(model)
     pruner = pruner_cls(compressed_model, config_list)
     compressed_model = pruner.compress()
@@ -171,26 +180,27 @@ def compress(model, dummy, pruner_cls, config_list, trace=None):
     pruner._unwrap_model()
 
     print("fixing mask conflict...")
-
     fixed_mask = fix_mask_conflict(mask_path, compressed_model, dummy, trace)
     mask = torch.load(mask_path)
 
-    mask_c = count_mask(mask)
-    print("origin mask count:", mask_c)
-    mask_c = count_mask(fixed_mask)
-    print("fixed mask count:", mask_c)
-
     compressed_model.load_state_dict(model.state_dict())
     apply_compression_results(compressed_model, fixed_mask)
-
+    if verbose:
+        count_zero(compressed_model, verbose=False)
+        from thop import profile
+        macs, params = profile(compressed_model, inputs=dummy, verbose=False)
+        print("MACs: {} G, Params: {} M".format(macs / 1000000000, params / 100000))
     speedup_model = speedup(compressed_model, dummy, fixed_mask, trace)
+    if verbose:
+        count_zero(speedup_model, verbose=False)
     return speedup_model, fixed_mask
-    # return compressed_model, fixed_mask
+
 
 def load_state_dict(model, dummy, model_state_dict, fixed_mask, strict=False):
     m_speedup = speedup(model, dummy, fixed_mask)
     m_speedup.bound_model.load_state_dict(model_state_dict)
     return m_speedup
+
 
 def save_state_dict(m_speedup, fixed_mask, model_path, mask_path):
     torch.save(m_speedup, model_path)

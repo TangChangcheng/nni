@@ -20,6 +20,45 @@ logger = logging.getLogger('Sensitivity_Analysis')
 logger.setLevel(logging.INFO)
 
 
+def load_csv(filepath):
+    """
+    Load a csv file to get the results of the sensitivity analysis.
+    The firstline of the csv file describe the content
+    structure. The first line is constructed by 'layername' and sparsity
+    list. Each line below records the validation metric returned by val_func
+    when this layer is under different sparsities. Note that, due to the early_stop
+    option, some layers may not have the metrics under all sparsities.
+
+    layername, 0.25, 0.5, 0.75
+    conv1, 0.6, 0.55
+    conv2, 0.61, 0.57, 0.56
+
+    Parameters
+    ----------
+    filepath : str
+        Path of the input file
+    """
+    with open(filepath, newline='') as csvfile:
+        reader = csv.reader(csvfile, delimiter=',')
+        sparsities = []
+        sensitivities = {}
+        row1 = next(reader)
+        for x in row1[1:]:
+            sparsities.append(float(x))
+        for row in reader:
+            layername = row[0]
+            input_dict = {}
+            for i in range(len(sparsities)):
+                if row[i + 1] == '':
+                    value = 0.0
+                else:
+                    value = float(row[i + 1])
+                input_dict[float(sparsities[i])] = value
+            sensitivities[layername] = input_dict
+    return sensitivities
+
+
+
 class SensitivityAnalysis:
     def __init__(self, model, val_func, sparsities=None, prune_type='l1', early_stop_mode=None, early_stop_value=None):
         """
@@ -84,7 +123,7 @@ class SensitivityAnalysis:
             self.Pruner = LevelPruner
         self.early_stop_mode = early_stop_mode
         self.early_stop_value = early_stop_value
-        self.ori_metric = None #0.832088489 #original validation metric for the model
+        self.ori_metric = None  # original validation metric for the model
         # already_pruned is for the iterative sensitivity analysis
         # For example, sensitivity_pruner iteratively prune the target
         # model according to the sensitivity. After each round of

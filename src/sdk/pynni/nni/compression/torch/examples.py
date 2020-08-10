@@ -159,11 +159,11 @@ def update_sparsity_by_sensitivity(config_list, ori_metric, metric_thres, sensit
     for layername in sensitivity:
         for sparsity in sorted(sensitivity[layername].keys()):
             if ori_metric - sensitivity[layername][sparsity] >  metric_thres:
-                new_cfg = {'sparsity': layer_sparsity, 'op_types': ['Conv2d'], 'op_names': [layername]}
-                config_list.insert(0, new_cfg)
                 break
             else:
                 layer_sparsity = sparsity
+        new_cfg = {'sparsity': layer_sparsity, 'op_types': ['Conv2d'], 'op_names': [layername]}
+        config_list.insert(0, new_cfg)
     return config_list
 
 

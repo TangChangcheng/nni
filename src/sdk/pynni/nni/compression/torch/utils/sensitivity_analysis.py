@@ -247,6 +247,7 @@ class SensitivityAnalysis:
 
             # save sens analysis intermediate results
             outdir = './sens_analysis_temp'
+            os.makedirs(outdir, exist_ok=True)
             csv_file_path = os.path.join(outdir, '%s.csv' % name)
             self.export(csv_file_path)
         return self.sensitivities

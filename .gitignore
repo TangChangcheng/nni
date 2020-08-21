@@ -89,3 +89,4 @@ venv.bak/
 # Examples
 examples/model_compress/checkpoints
 examples/model_compress/data
+examples/model_compress/sens_analysis*

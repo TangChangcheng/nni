@@ -12,75 +12,28 @@ from nni.compression.torch import LevelPruner, SlimPruner, FPGMPruner, L1FilterP
     L2FilterPruner, AGP_Pruner, ActivationMeanRankFilterPruner, ActivationAPoZRankFilterPruner
 
 prune_config = {
-    'level': {
-        'dataset_name': 'mnist',
-        'model_name': 'naive',
-        'pruner_class': LevelPruner,
-        'config_list': [{
-            'sparsity': 0.5,
-            'op_types': ['default'],
-        }]
-    },
-    'agp': {
-        'dataset_name': 'mnist',
-        'model_name': 'naive',
-        'pruner_class': AGP_Pruner,
-        'config_list': [{
-            'initial_sparsity': 0.,
-            'final_sparsity': 0.8,
-            'start_epoch': 0,
-            'end_epoch': 10,
-            'frequency': 1,
-            'op_types': ['Conv2d']
-        }]
-    },
-    'slim': {
-        'dataset_name': 'cifar10',
-        'model_name': 'vgg19',
-        'pruner_class': SlimPruner,
-        'config_list': [{
-            'sparsity': 0.7,
-            'op_types': ['BatchNorm2d']
-        }]
-    },
-    'fpgm': {
-        'dataset_name': 'mnist',
-        'model_name': 'naive',
-        'pruner_class': FPGMPruner,
-        'config_list': [{
-            'sparsity': 0.5,
-            'op_types': ['Conv2d']
-        }]
-    },
     'l1filter': {
         'dataset_name': 'cifar10',
         'model_name': 'vgg16',
         'pruner_class': L1FilterPruner,
         'input_shape': [64, 3, 32, 32],
         'config_list': [{
-            'sparsity': 0.7,
+            'sparsity': 0.1,
             'op_types': ['Conv2d'],
-            'op_names': ['feature.0', 'feature.24', 'feature.27', 'feature.30', 'feature.34', 'feature.37']
+            'op_names': ['excluded_layer_name'],
+            'exclude': True
         }]
     },
-    'mean_activation': {
-        'dataset_name': 'cifar10',
-        'model_name': 'vgg16',
-        'pruner_class': ActivationMeanRankFilterPruner,
+    'l1filter2': {
+        'dataset_name': 'mnist',
+        'model_name': 'naive',
+        'pruner_class': L1FilterPruner,
+        'input_shape': [64, 1, 28, 28],
         'config_list': [{
-            'sparsity': 0.5,
+            'sparsity': 0.1,
             'op_types': ['Conv2d'],
-            'op_names': ['feature.0', 'feature.24', 'feature.27', 'feature.30', 'feature.34', 'feature.37']
-        }]
-    },
-    'apoz': {
-        'dataset_name': 'cifar10',
-        'model_name': 'vgg16',
-        'pruner_class': ActivationAPoZRankFilterPruner,
-        'config_list': [{
-            'sparsity': 0.5,
-            'op_types': ['Conv2d'],
-            'op_names': ['feature.0', 'feature.24', 'feature.27', 'feature.30', 'feature.34', 'feature.37']
+            'op_names': ['excluded_layer_name'],
+            'exclude': True
         }]
     }
 }
@@ -144,12 +97,6 @@ def create_model(model_name='naive'):
         return VGG(16)
     else:
         return VGG(19)
-
-
-def create_pruner(model, pruner_name, optimizer=None):
-    pruner_class = prune_config[pruner_name]['pruner_class']
-    config_list = prune_config[pruner_name]['config_list']
-    return pruner_class(model, config_list, optimizer)
 
 
 def train(model, device, train_loader, optimizer):

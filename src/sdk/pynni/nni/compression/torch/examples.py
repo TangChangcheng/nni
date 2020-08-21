@@ -158,7 +158,7 @@ def update_sparsity_by_sensitivity(config_list, ori_metric, metric_thres, sensit
     layer_sparsity = 0.0
     for layername in sensitivity:
         for sparsity in sorted(sensitivity[layername].keys()):
-            if ori_metric - sensitivity[layername][sparsity] >  metric_thres:
+            if ori_metric - sensitivity[layername][sparsity] > metric_thres:
                 break
             else:
                 layer_sparsity = sparsity
@@ -181,7 +181,7 @@ def compress(model, dummy, pruner_cls, config_list, ori_metric=1.00, metric_thre
 
     print("fixing mask conflict...")
     fixed_mask = fix_mask_conflict(mask_path, compressed_model, dummy, trace)
-    mask = torch.load(mask_path)
+    # mask = torch.load(mask_path)
 
     compressed_model.load_state_dict(model.state_dict())
     apply_compression_results(compressed_model, fixed_mask)

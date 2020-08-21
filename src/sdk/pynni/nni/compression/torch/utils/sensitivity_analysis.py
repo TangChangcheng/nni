@@ -4,6 +4,7 @@
 import copy
 import csv
 import logging
+import os
 from collections import OrderedDict
 
 import numpy as np
@@ -244,6 +245,10 @@ class SensitivityAnalysis:
             # we only need reset the weight when the pruning layer changes.
             self.model.load_state_dict(self.ori_state_dict)
 
+            # save sens analysis intermediate results
+            outdir = './sens_analysis_temp'
+            csv_file_path = os.path.join(outdir, '%s.csv' % name)
+            self.export(csv_file_path)
         return self.sensitivities
 
 

@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=0,3 python ./automatic_prune.py --pruner_name l1filter --multi_gpu

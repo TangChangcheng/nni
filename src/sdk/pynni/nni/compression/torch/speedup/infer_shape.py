@@ -460,53 +460,57 @@ def view_inshape(module_masks, mask, shape):
     CoarseMask
         The mask of its output tensor
     """
-    # NOTE: the case constrained by the following four asserts
-
-    index_mask_shape = [m is None for m in mask.mask_index]
-    assert sum(index_mask_shape) == len(index_mask_shape) - 1, "Only single dimensional mask is supported"
-    index_mask_shape = index_mask_shape.index(False)
-
-    def calc_prod(shape, index):
-        pre = np.prod([1] + list(shape[:index]))
-        suf = np.prod(list(shape[index:]) + [1])
-        return pre, suf
-
-    pre, suf = calc_prod(shape['in_shape'], index_mask_shape)
-
-    for i in range(len(shape['out_shape'])):
-        o_pre, o_suf = calc_prod(shape['out_shape'], i)
-        if shape['out_shape'][i] == shape['in_shape'][index_mask_shape] and pre == o_pre and suf == o_suf:
-            break
+    # NOTE: the case constrained by the following asserts
+    if shape['in_shape'][0] == shape['out_shape'][0] and \
+            len(shape['in_shape']) == 4 and \
+            len(shape['out_shape']) == 2 and \
+            shape['out_shape'][1] == shape['in_shape'][1] * shape['in_shape'][2] * shape['in_shape'][3]:
+        # deal with view as flatten
+        assert isinstance(mask, CoarseMask)
+        assert mask.mask_index[1] is not None
+        assert mask.mask_index[0] is None
+        assert mask.mask_index[2] is None
+        assert mask.mask_index[3] is None
+        # due to the cat operation, the same node may be accessed more than once
+        if module_masks.input_mask is not None:
+            assert module_masks.input_mask <= mask
+        module_masks.set_input_mask(mask)
+        output_cmask = CoarseMask(num_dim=2)
+        index = []
+        step_size = shape['in_shape'][2] * shape['in_shape'][3]
+        for loc in mask.mask_index[1]:
+            index.extend([loc * step_size + i for i in range(step_size)])
+        output_cmask.add_index_mask(dim=1, index=torch.tensor(index))  # pylint: disable=not-callable
+        module_masks.set_output_mask(output_cmask)
+        return output_cmask
     else:
-        # TODO: flatten operation is not supported yet. or we can support flatten respectively.
-        raise ValueError(f"Pruned dimension should not be reshaped, got {shape['in_shape']} and {shape['out_shape']}")
+        # deal with view in pointpillars
+        index_mask_shape = [m is None for m in mask.mask_index]
+        assert sum(index_mask_shape) == len(index_mask_shape) - 1, "Only single dimensional mask is supported"
+        index_mask_shape = index_mask_shape.index(False)
 
-    # assert shape['in_shape'][0] == shape['out_shape'][0]
-    # assert len(shape['in_shape']) == 4
-    # assert len(shape['out_shape']) == 2
-    # assert shape['out_shape'][1] == shape['in_shape'][1] * \
-    #     shape['in_shape'][2]*shape['in_shape'][3]
+        def calc_prod(shape, index):
+            pre = np.prod([1] + list(shape[:index]))
+            suf = np.prod(list(shape[index:]) + [1])
+            return pre, suf
 
-    assert isinstance(mask, CoarseMask)
-    # assert mask.mask_index[1] is not None
-    # assert mask.mask_index[0] is None
-    # assert mask.mask_index[2] is None
-    # assert mask.mask_index[3] is None
-    assert module_masks.input_mask is None
-    module_masks.set_input_mask(mask)
+        pre, suf = calc_prod(shape['in_shape'], index_mask_shape)
+        for i in range(len(shape['out_shape'])):
+            o_pre, o_suf = calc_prod(shape['out_shape'], i)
+            if shape['out_shape'][i] == shape['in_shape'][index_mask_shape] and pre == o_pre and suf == o_suf:
+                break
+            else:
+                raise ValueError(
+                    f"Pruned dimension should not be reshaped, got {shape['in_shape']} and {shape['out_shape']}")
 
-    # Following code supports flatten operation.
-    # output_cmask = CoarseMask(num_dim=2)
-    # index = []
-    # step_size = shape['in_shape'][2] * shape['in_shape'][3]
-    # for loc in mask.mask_index[1]:
-    #     index.extend([loc * step_size + i for i in range(step_size)])
-    # output_cmask.add_index_mask(dim=1, index=torch.tensor(index))  # pylint: disable=not-callable
+        assert isinstance(mask, CoarseMask)
+        assert module_masks.input_mask is None
+        module_masks.set_input_mask(mask)
+        output_cmask = CoarseMask(num_dim=len(shape['out_shape']))
+        output_cmask.add_index_mask(dim=i, index=torch.tensor(mask.mask_index[index_mask_shape]))
+        module_masks.set_output_mask(output_cmask)
+        return output_cmask
 
-    output_cmask = CoarseMask(num_dim=len(shape['out_shape']))
-    output_cmask.add_index_mask(dim=i, index=torch.tensor(mask.mask_index[index_mask_shape]))
-    module_masks.set_output_mask(output_cmask)
-    return output_cmask
 
 def permute_inshape(module_masks, mask, order):
     output_cmask = CoarseMask(num_dim=len(mask.mask_index))

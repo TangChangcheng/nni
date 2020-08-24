@@ -13,6 +13,18 @@ from nni.compression.torch import LevelPruner, SlimPruner, FPGMPruner, L1FilterP
 
 prune_config = {
     'l1filter': {
+        'dataset_name': 'mnist',
+        'model_name': 'naive',
+        'pruner_class': L1FilterPruner,
+        'input_shape': [64, 1, 28, 28],
+        'config_list': [{
+            'sparsity': 0.1,
+            'op_types': ['Conv2d'],
+            'op_names': ['excluded_layer_name'],
+            'exclude': True
+        }]
+    },
+    'l1filter_vgg': {
         'dataset_name': 'cifar10',
         'model_name': 'vgg16',
         'pruner_class': L1FilterPruner,
@@ -24,10 +36,10 @@ prune_config = {
             'exclude': True
         }]
     },
-    'l1filter2': {
+    'l2filter': {
         'dataset_name': 'mnist',
         'model_name': 'naive',
-        'pruner_class': L1FilterPruner,
+        'pruner_class': L2FilterPruner,
         'input_shape': [64, 1, 28, 28],
         'config_list': [{
             'sparsity': 0.1,
@@ -181,7 +193,7 @@ def main(args):
         trace = torch.jit.trace(model, dummy_input)
         torch._C._jit_pass_inline(trace.graph)
     model, fixed_mask = compress(model.to('cpu'), dummy_input, prune_config[args.pruner_name]['pruner_class'],
-                                 config_list, ori_metric=0.85, metric_thres=0.10, sensitivity=sensitivity, trace=trace)
+                                 config_list, ori_metric=0.98, metric_thres=0.60, sensitivity=sensitivity, trace=trace)
     pruned_model_path = os.path.join(args.checkpoints_dir,
                                      'pruned_{}_{}_{}.pth'.format(model_name, dataset_name, args.pruner_name))
     mask_path = os.path.join(args.checkpoints_dir,
